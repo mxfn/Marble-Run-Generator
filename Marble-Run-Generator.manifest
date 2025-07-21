@@ -3,7 +3,7 @@
 	"type":	"addin",
 	"author":	"Max Fan",
 	"description":	{
-		"":	"Ball track generator that takes in user selected sketch points, lines, and curves as input."
+		"":	"Fusion 360 add in that procedurally generates a marble run based on user inputs."
 	},
 	"version":	"",
 	"runOnStartup":	false,

@@ -7,7 +7,7 @@ from . import logic
 app = adsk.core.Application.get()
 ui = app.userInterface
 
-spur_gear_logic: logic.SpurGearLogic = None
+marble_run_logic: logic.MarbleRunLogic = None
 
 # Specify the command identity information.
 CMD_ID = f'{config.COMPANY_NAME}_{config.ADDIN_NAME}_spurGearCreate'
@@ -43,8 +43,7 @@ def start():
         cmdDef.deleteMe()
 
     # Define the folder that contains the icon files. In this case it is a subfolder named "resources".
-    # icon_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', 'SpurGear')
-    icon_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', 'BallTrack')
+    icon_folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', 'DefaultIcons')
 
     # Create a command Definition.
     cmd_def = ui.commandDefinitions.addButtonDefinition(CMD_ID, CMD_NAME, CMD_Description, icon_folder)
@@ -114,15 +113,15 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     if des is None:
         return
 
-    # Create an instance of the Spur Gear command class.
-    global spur_gear_logic
-    spur_gear_logic = logic.SpurGearLogic(des)
+    # Create an instance of the command class.
+    global marble_run_logic
+    marble_run_logic = logic.MarbleRunLogic(des)
 
     cmd = args.command
     cmd.isExecutedWhenPreEmpted = False
 
     # Define the dialog by creating the command inputs.
-    spur_gear_logic.CreateCommandInputs(cmd.commandInputs)
+    marble_run_logic.CreateCommandInputs(cmd.commandInputs)
 
 
 # This event handler is called when the user hovers their mouse over something
@@ -130,7 +129,7 @@ def command_preselect(args: adsk.core.CommandEventArgs):
     # General logging for debug.
     futil.log(f'{CMD_NAME} Command Selection Event')
 
-    spur_gear_logic.HandlePreselection(args)
+    marble_run_logic.HandlePreselection(args)
 
 # This event handler is called when the user clicks the OK button in the command dialog or 
 # is immediately called after the created event not command inputs were created for the dialog.
@@ -138,7 +137,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
     # General logging for debug.
     futil.log(f'{CMD_NAME} Command Execute Event')
 
-    spur_gear_logic.HandleExecute(args)
+    marble_run_logic.HandleExecute(args)
 
 
 # This event handler is called when the command needs to compute a new preview in the graphics window.
@@ -152,7 +151,7 @@ def command_preview(args: adsk.core.CommandEventArgs):
 def command_input_changed(args: adsk.core.InputChangedEventArgs):
     futil.log(f'{CMD_NAME} Input Changed Event fired from a change to {args.input.id}')
 
-    spur_gear_logic.HandleInputsChanged(args)
+    marble_run_logic.HandleInputsChanged(args)
 
 
 # This event handler is called when the user interacts with any of the inputs in the dialog
@@ -160,7 +159,7 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
 def command_validate_inputs(args: adsk.core.CommandEventArgs):
     futil.log(f'{CMD_NAME} Validate Inputs Event fired.')
 
-    spur_gear_logic.HandleValidateInputs(args)
+    marble_run_logic.HandleValidateInputs(args)
 
 
 # This event handler is called when the command terminates.

@@ -3,11 +3,11 @@
 # Import the spur gear create module.
 # If you want to add an additional command, duplicate one of the existing directories and import it here.
 # You need to use aliases (import "entry" as "my_module") assuming you have the default module named "entry".
-from .spurGearCreate import entry as spurGearCreate
+from .marbleRunCreate import entry as marbleRunCreate
 
 # Add the spur gear create module to list so it will be started and stopped.
 commands = [
-    spurGearCreate
+    marbleRunCreate
 ]
 
 
