@@ -1,0 +1,18 @@
+
+
+Generate space filling curve
+Generate library of shapes
+
+
+Bonus:
+Provide option to allow tunnels (no bends)
+Allow for non square boundaries
+Create an elevator to lift the balls back up
+
+
+
+Useful references:
+https://ramoyer.com/2020/11/Ball-Race.html
+https://hackaday.com/2020/03/04/procedurally-generating-marble-runs/
+
+

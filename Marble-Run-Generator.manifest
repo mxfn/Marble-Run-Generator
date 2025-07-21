@@ -1,0 +1,13 @@
+{
+	"autodeskProduct":	"Fusion",
+	"type":	"addin",
+	"author":	"Max Fan",
+	"description":	{
+		"":	"Ball track generator that takes in user selected sketch points, lines, and curves as input."
+	},
+	"version":	"",
+	"runOnStartup":	false,
+	"supportedOS":	"windows|mac",
+	"editEnabled":	true,
+	"iconFilename": "BallTrackIcon.png"
+}
