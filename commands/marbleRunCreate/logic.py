@@ -49,7 +49,7 @@ class MarbleRunLogic():
         selection_input.addSelectionFilter('SketchCircles')
         selection_input.addSelectionFilter('SketchLines')
         selection_input.addSelectionFilter('SketchCurves')
-        selection_input.setSelectionLimits(1, 0)
+        selection_input.setSelectionLimits(0, 0)
 
         self.diameterValueInput = inputs.addValueInput('diameter', 'Diameter', 'mm', adsk.core.ValueInput.createByReal(float(self.diameter)))
 
@@ -107,10 +107,207 @@ class MarbleRunLogic():
         des = adsk.fusion.Design.cast(app.activeProduct)
         comp = des.activeComponent
         features = comp.features
+        extrudes = features.extrudeFeatures
+        pipes = features.pipeFeatures
+        sketches = comp.sketches
+        xzPlane = comp.xZConstructionPlane
+        yzPlane = comp.yZConstructionPlane
 
         inputs = args.command.commandInputs
         diameter = inputs.itemById('diameter').value # this is a float
         diameter_text = inputs.itemById('diameter').expression # this extracts exactly what the user typed as a string. Works for both numbers and user parameter names.
+        slope = 0.09
+
+
+        # Straight track sketch
+        straight_track_sketch = sketches.add(xzPlane)
+        lines = straight_track_sketch.sketchCurves.sketchLines
+        points = straight_track_sketch.sketchPoints
+        origin_point = straight_track_sketch.originPoint
+        constraints = straight_track_sketch.geometricConstraints
+        dimensions = straight_track_sketch.sketchDimensions
+
+        # Create ball path line
+        startPoint = adsk.core.Point3D.create(-1*diameter/2-0.5, -1*slope*(diameter/2+0.5), 0)
+        endPoint = adsk.core.Point3D.create(diameter/2+0.5, slope*(diameter/2+0.5), 0)
+        # point = points.add(startPoint)
+        ball_path_line = lines.addByTwoPoints(startPoint, endPoint)
+        constraints.addMidPoint(origin_point, ball_path_line)
+
+        # Create the top line
+        # startPointX = ball_path_line.startSketchPoint.geometry.copy().x + 0.5
+        # startPoint = adsk.core.Point3D.create(startPointX, 1.0, 0)
+        # endPointX = ball_path_line.endSketchPoint.geometry.copy().x - 0.5
+        # endPoint = adsk.core.Point3D.create(endPointX, 1.0, 0)
+        startPoint = adsk.core.Point3D.create(-1*diameter/2, 1, 0)
+        endPoint = adsk.core.Point3D.create(diameter/2, 1+diameter*slope, 0)
+        top_line = lines.addByTwoPoints(startPoint, endPoint)
+
+        # Add dimensions to the top line
+        textPoint = top_line.startSketchPoint.geometry.copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(-0.25,0.25,0))
+        top_line_v_dim = dimensions.addDistanceDimension(top_line.startSketchPoint, top_line.endSketchPoint, adsk.fusion.DimensionOrientations.VerticalDimensionOrientation, textPoint)
+        # top_line_v_dim.parameter.expression = f'{diameter} cm * 0.09'
+        top_line_v_dim.parameter.expression = f'{diameter_text} * {slope}'
+        textPoint = top_line.geometry.evaluator.getPointAtParameter(0.5)[1].copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(0,0.25,0))
+        top_line_h_dim = dimensions.addDistanceDimension(top_line.startSketchPoint, top_line.endSketchPoint, adsk.fusion.DimensionOrientations.HorizontalDimensionOrientation, textPoint)
+        top_line_h_dim.parameter.expression = f'{diameter_text}'
+
+        # Create the left vertical line
+        startPointCopy = top_line.startSketchPoint.geometry.copy()
+        endPoint = adsk.core.Point3D.create(startPointCopy.x, startPointCopy.y+1, 0)
+        left_line = lines.addByTwoPoints(top_line.startSketchPoint, endPoint)
+        constraints.addVertical(left_line)
+
+        # Create the right vertical line
+        endPointCopy = top_line.endSketchPoint.geometry.copy()
+        endPoint = adsk.core.Point3D.create(endPointCopy.x, endPointCopy.y+1, 0)
+        right_line = lines.addByTwoPoints(top_line.endSketchPoint, endPoint)
+        constraints.addVertical(right_line)
+
+        # Create the bottom line
+        bottom_line = lines.addByTwoPoints(left_line.endSketchPoint, right_line.endSketchPoint)
+
+        # Add parallel constraints with the top line
+        constraints.addParallel(top_line, ball_path_line)
+        constraints.addParallel(top_line, bottom_line)
+
+        # Add dimensions
+        # left margin
+        textPoint = ball_path_line.startSketchPoint.geometry.copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(0.25, -0.1, 0))
+        left_margin_dim = dimensions.addOffsetDimension(left_line, ball_path_line.startSketchPoint, textPoint)
+        left_margin_dim.parameter.expression = '5 mm'
+        # right margin
+        textPoint = ball_path_line.endSketchPoint.geometry.copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(-0.25, -0.1, 0))
+        right_margin_dim = dimensions.addOffsetDimension(right_line, ball_path_line.endSketchPoint, textPoint)
+        right_margin_dim.parameter.expression = '5 mm'
+        # bottom line
+        textPoint = bottom_line.geometry.evaluator.getPointAtParameter(0.5)[1].copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(0, -0.1, 0))
+        bottom_line_dim = dimensions.addOffsetDimension(ball_path_line, bottom_line, textPoint)
+        bottom_line_dim.parameter.expression = f'{diameter_text} / 2 + 2.5 mm'
+        # top line
+        textPoint = top_line.geometry.evaluator.getPointAtParameter(0.5)[1].copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(-0.1, -0.1, 0))
+        top_line_dim = dimensions.addOffsetDimension(ball_path_line, top_line, textPoint)
+        top_line_dim.parameter.expression = f'{diameter_text} / 4'
+
+        # Extrude sketch profile
+        prof = straight_track_sketch.profiles.item(0)
+        extrude_input = extrudes.createInput(prof, adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+        extrude_distance = adsk.core.ValueInput.createByString(diameter_text)
+        extrude_input.setSymmetricExtent(extrude_distance, True)
+        straight_track_extrude = extrudes.add(extrude_input)
+        body1 = straight_track_extrude.bodies.item(0)
+        body1.name = "Straight +X"
+        
+        # Cut ball path using pipe feature
+        path = adsk.fusion.Path.create(ball_path_line, adsk.fusion.ChainedCurveOptions.noChainedCurves)
+        pipe_input = pipes.createInput(path, adsk.fusion.FeatureOperations.CutFeatureOperation)
+        pipe_input.sectionSize = adsk.core.ValueInput.createByReal(diameter)
+        pipe = pipes.add(pipe_input)
+        pipe.sectionSize.expression = diameter_text # must set this equal to a string
+
+
+
+        # Bent track input path sketch
+        bent_track_input_path_sketch = sketches.add(yzPlane) # if you want a point to be at (a, b), you must input (-b, -a)
+        lines = bent_track_input_path_sketch.sketchCurves.sketchLines
+        points = bent_track_input_path_sketch.sketchPoints
+        origin_point = bent_track_input_path_sketch.originPoint
+        constraints = bent_track_input_path_sketch.geometricConstraints
+        dimensions = bent_track_input_path_sketch.sketchDimensions
+
+        start_point = origin_point
+        end_point = adsk.core.Point3D.create(-1, -2, 0)
+        input_path_line = lines.addByTwoPoints(start_point, end_point)
+
+        # Add dimensions to the input path line
+        textPoint = input_path_line.endSketchPoint.geometry.copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(0.1,-0.1,0))
+        input_path_line_v_dim = dimensions.addDistanceDimension(input_path_line.endSketchPoint, input_path_line.startSketchPoint, adsk.fusion.DimensionOrientations.HorizontalDimensionOrientation, textPoint)
+        input_path_line_v_dim.parameter.expression = f'{slope} * ( {diameter_text} / 2 + 5 mm )'
+        textPoint = input_path_line.geometry.evaluator.getPointAtParameter(0.5)[1].copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(-0.25,0,0))
+        input_path_line_h_dim = dimensions.addDistanceDimension(input_path_line.endSketchPoint, input_path_line.startSketchPoint, adsk.fusion.DimensionOrientations.VerticalDimensionOrientation, textPoint)
+        input_path_line_h_dim.parameter.expression = f'{diameter_text} / 2 + 5 mm'
+
+        # Create and dimension the extrude reference point
+        extrude_ref_point = points.add(adsk.core.Point3D.create(1, -1, 0))
+        textPoint = input_path_line.startSketchPoint.geometry.copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(0.1, -0.3, 0))
+        extrude_ref_point_h_dim = dimensions.addDistanceDimension(extrude_ref_point, input_path_line.startSketchPoint, adsk.fusion.DimensionOrientations.VerticalDimensionOrientation, textPoint)
+        extrude_ref_point_h_dim.parameter.expression = f'{diameter_text} / 2'
+        textPoint = extrude_ref_point.geometry.copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(-0.2, 0.2, 0))
+        extrude_ref_point_dist_dim = dimensions.addOffsetDimension(input_path_line, extrude_ref_point, textPoint)
+        extrude_ref_point_dist_dim.parameter.expression = f'{diameter_text} / 4'
+
+        # Bent track output path sketch
+        bent_track_output_path_sketch = sketches.add(xzPlane) # if you want a point to be at (a, b), you must input (a, -b)
+        lines = bent_track_output_path_sketch.sketchCurves.sketchLines
+        points = bent_track_output_path_sketch.sketchPoints
+        origin_point = bent_track_output_path_sketch.originPoint
+        constraints = bent_track_output_path_sketch.geometricConstraints
+        dimensions = bent_track_output_path_sketch.sketchDimensions
+
+        # Project a sketch point from sourceSketch into targetSketch
+        projectedEntities = bent_track_output_path_sketch.project2([extrude_ref_point], True)
+        if len(projectedEntities) > 0:
+            projected_extr_ref_point = projectedEntities[0]
+        
+        rec_lines = lines.addTwoPointRectangle(adsk.core.Point3D.create(-1*diameter/2, 0.1, 0), adsk.core.Point3D.create(diameter/2, 0.5, 0))
+        # rectangle lines seem to be listed clockwise starting with the top line
+        for i in range(rec_lines.count):
+            rec_line = rec_lines.item(i)
+            if i%2 == 0:
+                constraints.addHorizontal(rec_line)
+            else:
+                constraints.addVertical(rec_line)
+            # start_point = rec_line.startSketchPoint.geometry.getData()
+            # end_point = rec_line.endSketchPoint.geometry.getData()
+            # futil.log(f'rectangle line {i} starts at {start_point} and ends at {end_point}')
+        top_rec_line = rec_lines.item(0)
+        constraints.addMidPoint(projected_extr_ref_point, top_rec_line)
+
+        # Create output path line
+        start_point = origin_point
+        end_point = adsk.core.Point3D.create(1, 1, 0)
+        output_path_line = lines.addByTwoPoints(start_point, end_point)
+        textPoint = output_path_line.startSketchPoint.geometry.copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(0.2,-0.1,0))
+        output_path_line_h_dim = dimensions.addDistanceDimension(output_path_line.startSketchPoint, output_path_line.endSketchPoint, adsk.fusion.DimensionOrientations.HorizontalDimensionOrientation, textPoint)
+        output_path_line_h_dim.parameter.expression = f'{diameter_text} / 2 + 5 mm'
+        textPoint = output_path_line.endSketchPoint.geometry.copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(0.1,-0.1,0))
+        output_path_line_v_dim = dimensions.addDistanceDimension(output_path_line.startSketchPoint, output_path_line.endSketchPoint, adsk.fusion.DimensionOrientations.VerticalDimensionOrientation, textPoint)
+        output_path_line_v_dim.parameter.expression = f'{slope} * ( {diameter_text} / 2 + 5 mm )'
+
+        # Add the main dimensions
+        bottom_rec_line = rec_lines.item(2)
+        textPoint = bottom_rec_line.geometry.evaluator.getPointAtParameter(0.5)[1].copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(0, 0.1, 0))
+        dimension = dimensions.addDistanceDimension(bottom_rec_line.startSketchPoint, bottom_rec_line.endSketchPoint, adsk.fusion.DimensionOrientations.AlignedDimensionOrientation, textPoint)
+        dimension.parameter.expression = f'{diameter_text}'
+        textPoint = bottom_rec_line.startSketchPoint.geometry.copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(0.1,-0.1,0))
+        dimension = dimensions.addOffsetDimension(output_path_line, bottom_rec_line.startSketchPoint, textPoint)
+        dimension.parameter.expression = f'{diameter_text} / 2 + 2.5 mm'
+        
+        # Add construction line for trimming later
+        start_point = projected_extr_ref_point
+        end_point = adsk.core.Point3D.create(1, 1, 0)
+        trimming_line = lines.addByTwoPoints(start_point, end_point)
+        trimming_line.isConstruction = True
+        right_rec_line = rec_lines.item(1)
+        constraints.addCoincident(trimming_line.endSketchPoint, right_rec_line)
+        textPoint = trimming_line.endSketchPoint.geometry.copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(0.1, -0.1, 0))
+        dimension = dimensions.addOffsetDimension(output_path_line, trimming_line.endSketchPoint, textPoint)
+        dimension.parameter.expression = f'{diameter_text} / 4'
 
         #  Create all pipes
         isFirstPipe = True
@@ -171,12 +368,12 @@ class MarbleRunLogic():
         removeFeatures = features.removeFeatures
         removeSphere = removeFeatures.add(sphere.bodies[0]) # sphere.bodies.item(0) also seems to work
 
-        # Put the timeline features into a group
-        timelineGroups = des.timeline.timelineGroups
-        timelineStartIndex = firstTimelineFeature.timelineObject.index
-        timelineEndIndex = removeSphere.timelineObject.index
-        timelineGroup = timelineGroups.add(timelineStartIndex, timelineEndIndex)
-        timelineGroup.name = 'Ball Track Cutter'
+        # # Put the timeline features into a group
+        # timelineGroups = des.timeline.timelineGroups
+        # timelineStartIndex = firstTimelineFeature.timelineObject.index
+        # timelineEndIndex = removeSphere.timelineObject.index
+        # timelineGroup = timelineGroups.add(timelineStartIndex, timelineEndIndex)
+        # timelineGroup.name = 'Ball Track Cutter'
 
         
         # Save the current values as attributes.
