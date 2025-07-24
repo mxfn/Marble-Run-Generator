@@ -1,8 +1,8 @@
 
 import random
 
-xSize = 15
-ySize = 15
+xSize = 5
+ySize = 5
 matrix = [[0 for _ in range(xSize)] for _ in range(ySize)]
 num_moves = 0
 
@@ -104,15 +104,32 @@ def fill_path(x, y, num):
     matrix[y][x] = 0  # Backtrack
     return False
 
-# Try until a full path is found
-num_tries = 0
-while True:
-    matrix = [[0 for _ in range(xSize)] for _ in range(ySize)]
-    num_moves = 0
-    if fill_path(0, 0, 1):
-        break
+def generate_path():
+    global matrix
+    global xSize
+    global ySize
+    global num_moves
+    while True:
+        matrix = [[0 for _ in range(xSize)] for _ in range(ySize)]
+        num_moves = 0
+        if fill_path(0, 0, 1):
+            break
+    return matrix
 
-# Print the matrix with evenly spaced numbers
-width = len(str(xSize * ySize))
-for row in matrix:
-    print(' '.join(f"{cell:>{width}}" for cell in row))
+# while True:
+#     matrix = [[0 for _ in range(xSize)] for _ in range(ySize)]
+#     num_moves = 0
+#     if fill_path(0, 0, 1):
+#         break
+
+# # Print the matrix with evenly spaced numbers
+# width = len(str(xSize * ySize))
+# for row in matrix:
+#     print(' '.join(f"{cell:>{width}}" for cell in row))
+
+
+
+# the_matrix = generate_path()
+# width = len(str(xSize * ySize))
+# for row in the_matrix:
+#     print(' '.join(f"{cell:>{width}}" for cell in row))

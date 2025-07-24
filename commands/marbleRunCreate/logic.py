@@ -1,5 +1,6 @@
 import adsk.core
 import adsk.fusion
+from . import path_generator
 import math
 import os
 import json
@@ -394,7 +395,36 @@ class MarbleRunLogic():
         prof = bent_track_trim_sketch.profiles.item(0)
         extrude_distance = adsk.core.ValueInput.createByString(diameter_text)
         extrude = extrudes.addSimple(prof, extrude_distance, adsk.fusion.FeatureOperations.CutFeatureOperation)
+        bent_track_body.isVisible = False
 
+        matrix = path_generator.generate_path()
+        # futil.log(f'matrix: {matrix}')
+
+        # Create all tracks
+        copy_pastes = features.copyPasteBodies
+        moves = features.moveFeatures
+        x_pos = 0.0
+        y_pos = 0.0
+        z_pos = 0.0
+        z_drop = diameter*slope # float that represents how much the height drops after each cell
+        for row in range(len(matrix)):
+            x_pos = row * diameter
+            for col in range(len(matrix[0])):
+                y_pos = col * diameter
+                cell_val = matrix[row][col]
+                z_pos = (cell_val-1) * z_drop
+                track_copy = copy_pastes.add(straight_track_body)
+                track_copy_body = track_copy.bodies.item(0)
+
+                object_collection = adsk.core.ObjectCollection.create()
+                object_collection.add(track_copy_body)
+                move_input = moves.createInput2(object_collection)
+                x_delta = adsk.core.ValueInput.createByReal(x_pos)
+                y_delta = adsk.core.ValueInput.createByReal(y_pos)
+                z_delta = adsk.core.ValueInput.createByReal(z_pos)
+                move_input.defineAsTranslateXYZ(x_delta, y_delta, z_delta, True)
+                track_move = moves.add(move_input)
+                
 
 
 
