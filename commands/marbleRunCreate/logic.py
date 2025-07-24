@@ -109,7 +109,9 @@ class MarbleRunLogic():
         features = comp.features
         extrudes = features.extrudeFeatures
         pipes = features.pipeFeatures
+        revolves = features.revolveFeatures
         sketches = comp.sketches
+        xyPlane = comp.xYConstructionPlane
         xzPlane = comp.xZConstructionPlane
         yzPlane = comp.yZConstructionPlane
 
@@ -121,6 +123,7 @@ class MarbleRunLogic():
 
         # Straight track sketch
         straight_track_sketch = sketches.add(xzPlane)
+        straight_track_sketch.name = 'Straight Track'
         lines = straight_track_sketch.sketchCurves.sketchLines
         points = straight_track_sketch.sketchPoints
         origin_point = straight_track_sketch.originPoint
@@ -201,8 +204,8 @@ class MarbleRunLogic():
         extrude_distance = adsk.core.ValueInput.createByString(diameter_text)
         extrude_input.setSymmetricExtent(extrude_distance, True)
         straight_track_extrude = extrudes.add(extrude_input)
-        body1 = straight_track_extrude.bodies.item(0)
-        body1.name = "Straight +X"
+        straight_track_body = straight_track_extrude.bodies.item(0)
+        straight_track_body.name = "Straight +X"
         
         # Cut ball path using pipe feature
         path = adsk.fusion.Path.create(ball_path_line, adsk.fusion.ChainedCurveOptions.noChainedCurves)
@@ -210,11 +213,13 @@ class MarbleRunLogic():
         pipe_input.sectionSize = adsk.core.ValueInput.createByReal(diameter)
         pipe = pipes.add(pipe_input)
         pipe.sectionSize.expression = diameter_text # must set this equal to a string
+        straight_track_body.isVisible = False # hide the body so that it isn't cut by later features
 
 
 
         # Bent track input path sketch
         bent_track_input_path_sketch = sketches.add(yzPlane) # if you want a point to be at (a, b), you must input (-b, -a)
+        bent_track_input_path_sketch.name = 'Bent Track Input'
         lines = bent_track_input_path_sketch.sketchCurves.sketchLines
         points = bent_track_input_path_sketch.sketchPoints
         origin_point = bent_track_input_path_sketch.originPoint
@@ -248,6 +253,7 @@ class MarbleRunLogic():
 
         # Bent track output path sketch
         bent_track_output_path_sketch = sketches.add(xzPlane) # if you want a point to be at (a, b), you must input (a, -b)
+        bent_track_output_path_sketch.name = 'Bent Track Output'
         lines = bent_track_output_path_sketch.sketchCurves.sketchLines
         points = bent_track_output_path_sketch.sketchPoints
         origin_point = bent_track_output_path_sketch.originPoint
@@ -309,64 +315,147 @@ class MarbleRunLogic():
         dimension = dimensions.addOffsetDimension(output_path_line, trimming_line.endSketchPoint, textPoint)
         dimension.parameter.expression = f'{diameter_text} / 4'
 
-        #  Create all pipes
-        isFirstPipe = True
-        firstPipe = None
-        for entity in stored_curve_entities:
-            path = adsk.fusion.Path.create(entity, adsk.fusion.ChainedCurveOptions.noChainedCurves)
-            sectionSize = diameter_text
-            pipe = create_pipe(comp, path, sectionSize)
-            if isFirstPipe:
-                firstPipe = pipe
-                isFirstPipe = False
-        firstTimelineFeature = firstPipe
+        # Extrude sketch profile
+        prof = bent_track_output_path_sketch.profiles.item(0)
+        extrude_input = extrudes.createInput(prof, adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+        extrude_distance = adsk.core.ValueInput.createByString(diameter_text)
+        extrude_input.setSymmetricExtent(extrude_distance, True)
+        bent_track_extrude = extrudes.add(extrude_input)
+        bent_track_body = bent_track_extrude.bodies.item(0)
+        bent_track_body.name = "Bent +Y+X"
 
-        # Create a sphere
-        sketches = comp.sketches
-        xyPlane = comp.xYConstructionPlane
-        sketch = sketches.add(xyPlane)
-        if not firstTimelineFeature:
-            firstTimelineFeature = sketch
-        arcs = sketch.sketchCurves.sketchArcs
-        lines = sketch.sketchCurves.sketchLines
+        # Cut ball paths using pipe features
+        path = adsk.fusion.Path.create(input_path_line, adsk.fusion.ChainedCurveOptions.noChainedCurves)
+        pipe_input = pipes.createInput(path, adsk.fusion.FeatureOperations.CutFeatureOperation)
+        pipe_input.sectionSize = adsk.core.ValueInput.createByReal(diameter)
+        pipe = pipes.add(pipe_input)
+        pipe.sectionSize.expression = diameter_text
+        path = adsk.fusion.Path.create(output_path_line, adsk.fusion.ChainedCurveOptions.noChainedCurves)
+        pipe_input = pipes.createInput(path, adsk.fusion.FeatureOperations.CutFeatureOperation)
+        pipe_input.sectionSize = adsk.core.ValueInput.createByReal(diameter)
+        pipe = pipes.add(pipe_input)
+        pipe.sectionSize.expression = diameter_text
+
+        # Cut the track with a sphere
+        sphere_sketch = sketches.add(xyPlane)
+        sphere_sketch.name = 'Bent Track Sphere'
+        arcs = sphere_sketch.sketchCurves.sketchArcs
+        lines = sphere_sketch.sketchCurves.sketchLines
+        origin_point = sphere_sketch.originPoint
+        constraints = sphere_sketch.geometricConstraints
+        dimensions = sphere_sketch.sketchDimensions
         
-        center = adsk.core.Point3D.create(0, 0, 0)
-        startPoint = adsk.core.Point3D.create(0, diameter/2.0, 0)
-        endPoint = adsk.core.Point3D.create(0, -1*diameter/2.0, 0)
-        diameterLine = lines.addByTwoPoints(startPoint, endPoint)
-        arc = arcs.addByCenterStartEnd(center, diameterLine.startSketchPoint, diameterLine.endSketchPoint) # using the line's endpoint attributes joins the line to the arc
+        center = origin_point
+        start_point = adsk.core.Point3D.create(0, diameter/2.0, 0)
+        end_point = adsk.core.Point3D.create(0, -1*diameter/2.0, 0)
+        diameter_line = lines.addByTwoPoints(start_point, end_point)
+        arc = arcs.addByCenterStartEnd(center, diameter_line.startSketchPoint, diameter_line.endSketchPoint)
 
-        textPoint: adsk.core.Point3D = arc.centerSketchPoint.geometry.copy()
-        textPoint.translateBy(adsk.core.Vector3D.create(0.25,0.25,0))
-        dimensions: adsk.fusion.SketchDimensions = sketch.sketchDimensions
-        diameterDim: adsk.fusion.SketchDiameterDimension = dimensions.addDiameterDimension(arc, textPoint, True)
-        modelPrm: adsk.fusion.ModelParameter = diameterDim.parameter
-        # modelPrm.expression = diam_param.name
-        modelPrm.expression = diameter_text
+        textPoint = arc.centerSketchPoint.geometry.copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(0.2,0.2,0))
+        dimension = dimensions.addDiameterDimension(arc, textPoint, True)
+        dimension.parameter.expression = diameter_text
 
-        origin_point = sketch.originPoint
         circle_center = arc.centerSketchPoint
-        constraints = sketch.geometricConstraints
-        circle_coincident_constraint = constraints.addCoincident(circle_center, origin_point)
-        line_coincident_constraint = constraints.addCoincident(circle_center, diameterLine)
-        vertical_constraint = constraints.addVertical(diameterLine)
+        constraints.addCoincident(circle_center, origin_point)
+        constraints.addCoincident(circle_center, diameter_line)
+        constraints.addVertical(diameter_line)
 
-        prof = sketch.profiles.item(0)
-        revolves = comp.features.revolveFeatures
-        revInput = revolves.createInput(prof, diameterLine, adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+        prof = sphere_sketch.profiles.item(0)
+        revInput = revolves.createInput(prof, diameter_line, adsk.fusion.FeatureOperations.CutFeatureOperation)
         revInput.setAngleExtent(False, adsk.core.ValueInput.createByReal(math.pi * 2))
-        sphere = revolves.add(revInput)
+        revolve = revolves.add(revInput)
 
-        fromPoint = des.rootComponent.originConstructionPoint
 
-        #  Create all spheres
-        for entity in stored_point_entities:
-            toPoint = entity
-            create_sphere(comp, sphere, fromPoint, toPoint)
+        # Bent track trim sketch
+        bent_track_trim_sketch = sketches.add(xzPlane) # if you want a point to be at (a, b), you must input (a, -b)
+        bent_track_trim_sketch.name = 'Bent Track Trim'
+        lines = bent_track_trim_sketch.sketchCurves.sketchLines
+        points = bent_track_trim_sketch.sketchPoints
+        origin_point = bent_track_trim_sketch.originPoint
+        constraints = bent_track_trim_sketch.geometricConstraints
+        dimensions = bent_track_trim_sketch.sketchDimensions
 
-        # Parametrically remove the reference sphere at the origin
-        removeFeatures = features.removeFeatures
-        removeSphere = removeFeatures.add(sphere.bodies[0]) # sphere.bodies.item(0) also seems to work
+        projectedEntities = bent_track_trim_sketch.project2([trimming_line], True)
+        projected_trimming_line = projectedEntities[0]
+        
+        intermediate_point = adsk.core.Point3D.create(projected_trimming_line.endSketchPoint.geometry.x, projected_trimming_line.startSketchPoint.geometry.y, 0)
+        # points.add(intermediate_point)
+        # Must add coincident constraints or else the the horizontal and vertical lines won't stay attached to the projected line if it moves
+        # I also have to use a Point3D copy of the projected line endpoints
+        h_line = lines.addByTwoPoints(projected_trimming_line.startSketchPoint.geometry.copy(), intermediate_point)
+        v_line = lines.addByTwoPoints(h_line.endSketchPoint, projected_trimming_line.endSketchPoint.geometry.copy())
+        constraints.addHorizontal(h_line)
+        constraints.addVertical(v_line)
+        constraints.addCoincident(h_line.startSketchPoint, projected_trimming_line.startSketchPoint)
+        constraints.addCoincident(v_line.endSketchPoint, projected_trimming_line.endSketchPoint)
+
+        # Trim the bent track
+        prof = bent_track_trim_sketch.profiles.item(0)
+        extrude_distance = adsk.core.ValueInput.createByString(diameter_text)
+        extrude = extrudes.addSimple(prof, extrude_distance, adsk.fusion.FeatureOperations.CutFeatureOperation)
+
+
+
+
+        # #  Create all pipes
+        # isFirstPipe = True
+        # firstPipe = None
+        # for entity in stored_curve_entities:
+        #     path = adsk.fusion.Path.create(entity, adsk.fusion.ChainedCurveOptions.noChainedCurves)
+        #     sectionSize = diameter_text
+        #     pipe = create_pipe(comp, path, sectionSize)
+        #     if isFirstPipe:
+        #         firstPipe = pipe
+        #         isFirstPipe = False
+        # firstTimelineFeature = firstPipe
+
+        # # Create a sphere
+        # sketches = comp.sketches
+        # xyPlane = comp.xYConstructionPlane
+        # sketch = sketches.add(xyPlane)
+        # if not firstTimelineFeature:
+        #     firstTimelineFeature = sketch
+        # arcs = sketch.sketchCurves.sketchArcs
+        # lines = sketch.sketchCurves.sketchLines
+        
+        # center = adsk.core.Point3D.create(0, 0, 0)
+        # startPoint = adsk.core.Point3D.create(0, diameter/2.0, 0)
+        # endPoint = adsk.core.Point3D.create(0, -1*diameter/2.0, 0)
+        # diameterLine = lines.addByTwoPoints(startPoint, endPoint)
+        # arc = arcs.addByCenterStartEnd(center, diameterLine.startSketchPoint, diameterLine.endSketchPoint) # using the line's endpoint attributes joins the line to the arc
+
+        # textPoint: adsk.core.Point3D = arc.centerSketchPoint.geometry.copy()
+        # textPoint.translateBy(adsk.core.Vector3D.create(0.25,0.25,0))
+        # dimensions: adsk.fusion.SketchDimensions = sketch.sketchDimensions
+        # diameterDim: adsk.fusion.SketchDiameterDimension = dimensions.addDiameterDimension(arc, textPoint, True)
+        # modelPrm: adsk.fusion.ModelParameter = diameterDim.parameter
+        # # modelPrm.expression = diam_param.name
+        # modelPrm.expression = diameter_text
+
+        # origin_point = sketch.originPoint
+        # circle_center = arc.centerSketchPoint
+        # constraints = sketch.geometricConstraints
+        # circle_coincident_constraint = constraints.addCoincident(circle_center, origin_point)
+        # line_coincident_constraint = constraints.addCoincident(circle_center, diameterLine)
+        # vertical_constraint = constraints.addVertical(diameterLine)
+
+        # prof = sketch.profiles.item(0)
+        # revolves = comp.features.revolveFeatures
+        # revInput = revolves.createInput(prof, diameterLine, adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
+        # revInput.setAngleExtent(False, adsk.core.ValueInput.createByReal(math.pi * 2))
+        # sphere = revolves.add(revInput)
+
+        # fromPoint = des.rootComponent.originConstructionPoint
+
+        # #  Create all spheres
+        # for entity in stored_point_entities:
+        #     toPoint = entity
+        #     create_sphere(comp, sphere, fromPoint, toPoint)
+
+        # # Parametrically remove the reference sphere at the origin
+        # removeFeatures = features.removeFeatures
+        # removeSphere = removeFeatures.add(sphere.bodies[0]) # sphere.bodies.item(0) also seems to work
 
         # # Put the timeline features into a group
         # timelineGroups = des.timeline.timelineGroups
