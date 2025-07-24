@@ -35,9 +35,9 @@ class MarbleRunLogic():
         if settings:
             self.diameter = settings['Diameter']
 
-        self.ignoreArcCenters = True
-        if settings:
-            self.ignoreArcCenters = settings['IgnoreArcCenters']
+        # self.ignoreArcCenters = True
+        # if settings:
+        #     self.ignoreArcCenters = settings['IgnoreArcCenters']
 
 
     def CreateCommandInputs(self, inputs: adsk.core.CommandInputs):
@@ -45,45 +45,39 @@ class MarbleRunLogic():
         skipValidate = True
 
         # Create the command inputs to define the contents of the command dialog.
-        selection_input = inputs.addSelectionInput('selection_input', 'Selection', 'Select Sketch Geometry')
-        selection_input.addSelectionFilter('SketchPoints')
-        selection_input.addSelectionFilter('SketchCircles')
-        selection_input.addSelectionFilter('SketchLines')
-        selection_input.addSelectionFilter('SketchCurves')
-        selection_input.setSelectionLimits(0, 0)
+        self.widthValueInput = inputs.addIntegerSliderCommandInput('num_x_cells', 'Width', 2, 15, False)
+        self.widthValueInput.tooltip = "Number of cells in the X direction"
+        self.widthValueInput.valueOne = 5 # set default value
+        self.depthValueInput = inputs.addIntegerSliderCommandInput('num_y_cells', 'Depth', 2, 15, False)
+        self.depthValueInput.tooltip = "Number of cells in the Y direction"
+        self.depthValueInput.valueOne = 5 # set default value
 
-        self.diameterValueInput = inputs.addValueInput('diameter', 'Diameter', 'mm', adsk.core.ValueInput.createByReal(float(self.diameter)))
+        self.diameterValueInput = inputs.addValueInput('diameter', 'Marble Diameter', 'mm', adsk.core.ValueInput.createByReal(float(self.diameter)))
+        self.clearanceValueInput = inputs.addValueInput('clearance', 'Clearance', 'mm', adsk.core.ValueInput.createByReal(0.015))
+        self.clearanceValueInput.tooltip = "Clearance between the marble and the track"
 
-        self.ignoreArcCentersValueInput = inputs.addBoolValueInput('ignore_arc_centers', 'Ignore Arc Centers', True, '', self.ignoreArcCenters)
-        self.ignoreArcCentersValueInput.tooltip = "Check this to prevent the command dialog from adding spheres to the center points of arcs and circles."
-
+        self.slopeValueInput = inputs.addValueInput('slope', 'Slope', '', adsk.core.ValueInput.createByReal(0.09))
+        # text_box_message = "This is a <b>Text Box</b> Message.<br>You can use <i>basic</i> HTML formatting."
+        # text_box_input = inputs.addTextBoxCommandInput('text_box_input', 'Text Box', text_box_message, 2, True)
+        # text_box_input.isFullWidth = True
+        slope = self.slopeValueInput.value
+        angle = abs(math.degrees(math.atan2(slope, 1.0)))
+        angle_text = f'{angle:.2f} deg' # display angle with two decimal places
+        self.angleTextInput = inputs.addTextBoxCommandInput('angle', 'Angle', angle_text, 1, True)
 
         skipValidate = False
 
-    def HandlePreselection(self, args: adsk.core.CommandEventArgs):
-        selection = args.selection
-        entity = selection.entity
-        futil.log(f'entity is of type {entity.objectType}')
-        
-        # Ignore the entity if it's construction geometry
-        if hasattr(entity, 'isConstruction') and entity.isConstruction: # the first condition prevents an error if the entity does not have a 'isConstruction' attribute
-            args.isSelectable = False
-            return
-        
-        # If the "Ignore Arc Centers" checkbox is checked, ignore arc and circle center points.
-        if entity.objectType == adsk.fusion.SketchPoint.classType():
-            sketch_point = entity
-            sketch = sketch_point.parentSketch
-            if self.ignoreArcCenters and is_arc_center_point(sketch_point, sketch):
-                args.isSelectable = False
-                return
-
     def HandleInputsChanged(self, args: adsk.core.InputChangedEventArgs):
+        des = adsk.fusion.Design.cast(app.activeProduct)
         changedInput = args.input
         if not skipValidate:
-            self.ignoreArcCenters = self.ignoreArcCentersValueInput.value
+            # self.ignoreArcCenters = self.ignoreArcCentersValueInput.value
+            if changedInput.id == 'slope':
+                slope = self.slopeValueInput.value
+                angle = abs(math.degrees(math.atan2(slope, 1.0)))
+                angle_text = f'{angle:.2f} deg' # display angle with two decimal places
+                self.angleTextInput.text = angle_text
                 
-
 
     def HandleValidateInputs(self, args: adsk.core.ValidateInputsEventArgs):
         pass
@@ -91,19 +85,6 @@ class MarbleRunLogic():
 
     def HandleExecute(self, args: adsk.core.CommandEventArgs):
         inputs = args.command.commandInputs
-        selection_input: adsk.core.SelectionCommandInput = inputs.itemById('selection_input')
-        ignore_arc_centers = self.ignoreArcCentersValueInput.value
-        num_selections = selection_input.selectionCount
-        # msg = f'You have {num_selections} selections selected.'
-        # ui.messageBox(msg)
-        stored_point_entities = []
-        stored_curve_entities = []
-        for i in range(num_selections):
-            selected_entity = selection_input.selection(i).entity
-            if selected_entity.objectType == adsk.fusion.SketchPoint.classType():
-                stored_point_entities.append(selected_entity)
-            else:
-                stored_curve_entities.append(selected_entity)
         
         des = adsk.fusion.Design.cast(app.activeProduct)
         comp = des.activeComponent
@@ -120,11 +101,20 @@ class MarbleRunLogic():
         yzPlane = comp.yZConstructionPlane
         zAxis = comp.zConstructionAxis
 
-        inputs = args.command.commandInputs
-        diameter = inputs.itemById('diameter').value # this is a float
-        diameter_text = inputs.itemById('diameter').expression # this extracts exactly what the user typed as a string. Works for both numbers and user parameter names.
-        slope = 0.09
+        num_x_cells = inputs.itemById('num_x_cells').valueOne # int
+        num_y_cells = inputs.itemById('num_y_cells').valueOne
 
+        slope = inputs.itemById('slope').value
+        # slope = 0.09
+
+        ball_diameter = inputs.itemById('diameter').value # this is a float
+        ball_diameter_text = inputs.itemById('diameter').expression # this extracts exactly what the user typed as a string. Works for both numbers and user parameter names.
+
+        clearance = inputs.itemById('clearance').value
+        clearance_text = inputs.itemById('clearance').expression
+
+        diameter = ball_diameter + 2*clearance # float
+        diameter_text = f'({ball_diameter_text} + 2 * {clearance_text})' # String
 
         # Straight track sketch
         straight_track_sketch = sketches.add(xzPlane)
@@ -495,7 +485,7 @@ class MarbleRunLogic():
         track_PXPY_body.isVisible = False
 
         # Create a matrix that represents the track path
-        matrix = path_generator.generate_path()
+        matrix = path_generator.generate_path(num_x_cells, num_y_cells)
         futil.log(f'matrix: {matrix}')
         # Create a matrix showing what type of track should be used
         type_matrix = path_generator.generate_type_matrix()
@@ -601,30 +591,14 @@ class MarbleRunLogic():
 
         
         # Save the current values as attributes.
-        settings = {'Diameter': str(self.diameterValueInput.value),
-                    'IgnoreArcCenters': self.ignoreArcCentersValueInput.value}
+        settings = {'Diameter': str(self.diameterValueInput.value)}
+        # settings = {'Diameter': str(self.diameterValueInput.value),
+        #             'IgnoreArcCenters': self.ignoreArcCentersValueInput.value}
 
         jsonSettings = json.dumps(settings)
 
         attribs = des.attributes
         attribs.add('MarbleRun', 'settings', jsonSettings)
-
-
-def is_arc_center_point(sketch_point, sketch):
-   """Check if a sketch point is the center of any arc or circle in its sketch"""
-   
-   # Get all arcs in the sketch
-   arcs = sketch.sketchCurves.sketchArcs
-   circles = sketch.sketchCurves.sketchCircles
-
-   for arc in arcs:
-       if arc.centerSketchPoint == sketch_point:
-           return True
-   for circle in circles:
-       if circle.centerSketchPoint == sketch_point:
-           return True
-   
-   return False
 
 
 def create_pipe(component, path, sectionSize: str):

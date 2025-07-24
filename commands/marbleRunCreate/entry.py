@@ -102,7 +102,6 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     futil.log(f'{CMD_NAME} Command Created Event')
 
     # Setup the event handlers needed for this command.
-    futil.add_handler(args.command.preSelect, command_preselect, local_handlers=local_handlers)
     futil.add_handler(args.command.execute, command_execute, local_handlers=local_handlers)
     futil.add_handler(args.command.inputChanged, command_input_changed, local_handlers=local_handlers)
     futil.add_handler(args.command.executePreview, command_preview, local_handlers=local_handlers)
@@ -123,13 +122,6 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     # Define the dialog by creating the command inputs.
     marble_run_logic.CreateCommandInputs(cmd.commandInputs)
 
-
-# This event handler is called when the user hovers their mouse over something
-def command_preselect(args: adsk.core.CommandEventArgs):
-    # General logging for debug.
-    futil.log(f'{CMD_NAME} Command Selection Event')
-
-    marble_run_logic.HandlePreselection(args)
 
 # This event handler is called when the user clicks the OK button in the command dialog or 
 # is immediately called after the created event not command inputs were created for the dialog.

@@ -1,9 +1,10 @@
 
 import random
 
-xSize = 7
+xSize = 5
 ySize = 5
-matrix = [[0 for _ in range(xSize)] for _ in range(ySize)]
+# matrix = [[0 for _ in range(xSize)] for _ in range(ySize)]
+matrix = None
 num_moves = 0
 
 # Directions: up, down, left, right
@@ -16,6 +17,15 @@ directions = [(-1,0), (1,0), (0,-1), (0,1)]
 # 4:[1,0], 5:[2,1], 6:[3,2], 7:[0,3]
 # 8:[1,2], 9:[2,3], 10:[3,0], 11:[0,1]
 track_type_dict = {(0,0): 0, (1,1): 1, (2,2): 2, (3,3): 3, (1,0): 4, (2,1): 5, (3,2): 6, (0,3): 7, (1,2): 8, (2,3): 9, (3,0): 10, (0,1): 11}
+
+def create_matrix(x_size, y_size):
+    global xSize
+    global ySize
+    global matrix
+    xSize = x_size
+    ySize = y_size
+    matrix = [[0 for _ in range(xSize)] for _ in range(ySize)]
+    return matrix
 
 def is_valid(x, y):
     return 0 <= x < xSize and 0 <= y < ySize and matrix[y][x] == 0
@@ -111,13 +121,12 @@ def fill_path(x, y, num):
     matrix[y][x] = 0  # Backtrack
     return False
 
-def generate_path():
-    global matrix
-    global xSize
-    global ySize
+def generate_path(x_size, y_size):
+    # global matrix
     global num_moves
+    create_matrix(x_size, y_size)
     while True:
-        matrix = [[0 for _ in range(xSize)] for _ in range(ySize)]
+        # matrix = [[0 for _ in range(xSize)] for _ in range(ySize)]
         num_moves = 0
         if fill_path(0, 0, 1):
             break
@@ -178,7 +187,7 @@ def generate_type_matrix():
             type_matrix[row][col] = track_type_dict[track_type_key]
     return type_matrix
 
-the_matrix = generate_path()
+the_matrix = generate_path(xSize, ySize)
 type_matrix = generate_type_matrix()
 
 
