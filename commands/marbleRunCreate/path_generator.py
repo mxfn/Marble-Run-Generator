@@ -1,7 +1,7 @@
 
 import random
 
-xSize = 5
+xSize = 7
 ySize = 5
 matrix = [[0 for _ in range(xSize)] for _ in range(ySize)]
 num_moves = 0
@@ -9,9 +9,16 @@ num_moves = 0
 # Directions: up, down, left, right
 directions = [(-1,0), (1,0), (0,-1), (0,1)]
 
+# 0:+X, 1:+Y, 2:-X, 3:-Y
+# 4:+Y+X, 5:-X+Y, 6:-Y-X, 7:+X-Y
+# 8:+Y-X, 9:-X-Y, 10:-Y+X, 11:+X+Y
+# 0:[0,0], 1:[1,1], 2:[2,2], 3:[3,3]
+# 4:[1,0], 5:[2,1], 6:[3,2], 7:[0,3]
+# 8:[1,2], 9:[2,3], 10:[3,0], 11:[0,1]
+track_type_dict = {(0,0): 0, (1,1): 1, (2,2): 2, (3,3): 3, (1,0): 4, (2,1): 5, (3,2): 6, (0,3): 7, (1,2): 8, (2,3): 9, (3,0): 10, (0,1): 11}
+
 def is_valid(x, y):
     return 0 <= x < xSize and 0 <= y < ySize and matrix[y][x] == 0
-
 
 def onward_moves_randomized(x, y, probability=0.8):
     def randomizer(probability):
@@ -116,20 +123,67 @@ def generate_path():
             break
     return matrix
 
-# while True:
-#     matrix = [[0 for _ in range(xSize)] for _ in range(ySize)]
-#     num_moves = 0
-#     if fill_path(0, 0, 1):
-#         break
+def is_within_bounds(row, col):
+    return 0 <= col < xSize and 0 <= row < ySize
 
-# # Print the matrix with evenly spaced numbers
-# width = len(str(xSize * ySize))
-# for row in matrix:
-#     print(' '.join(f"{cell:>{width}}" for cell in row))
+def find_prev_cell(current_cell):
+    row = current_cell[0]
+    col = current_cell[1]
+    cell_val = matrix[row][col]
+    cell_search_val = cell_val-1
+    directions = [(0,-1), (1,0), (0,1), (-1,0)]
+    for i in range(len(directions)):
+        test_row = row+directions[i][0]
+        test_col = col+directions[i][1]
+        if (is_within_bounds(test_row, test_col)):
+            test_cell_val = matrix[test_row][test_col]
+            if test_cell_val == cell_search_val:
+                direction = i
+                return direction
+    return None
+
+def find_next_cell(current_cell):
+    row = current_cell[0]
+    col = current_cell[1]
+    cell_val = matrix[row][col]
+    cell_search_val = cell_val+1
+    directions = [(0,1), (-1,0), (0,-1), (1,0)]
+    for i in range(len(directions)):
+        test_row = row+directions[i][0]
+        test_col = col+directions[i][1]
+        if (is_within_bounds(test_row, test_col)):
+            test_cell_val = matrix[test_row][test_col]
+            if test_cell_val == cell_search_val:
+                direction = i
+                return direction
+    return None
+
+# Create a matrix showing what type of track should be used
+def generate_type_matrix():
+    type_matrix = [[0 for _ in range(len(matrix[0]))] for _ in range(len(matrix))]
+    for row in range(len(type_matrix)):
+        for col in range(len(type_matrix[0])):
+            cell_val = matrix[row][col]
+            prev_cell_dir = 0
+            next_cell_dir = 0
+            if cell_val > 1:
+                prev_cell_dir = find_prev_cell([row, col])
+            if cell_val < len(type_matrix)*len(type_matrix[0]):
+                next_cell_dir = find_next_cell([row, col])
+            if cell_val == 1:
+                prev_cell_dir = next_cell_dir
+            if cell_val == len(type_matrix)*len(type_matrix[0]):
+                next_cell_dir = prev_cell_dir
+            track_type_key = (prev_cell_dir, next_cell_dir)
+            type_matrix[row][col] = track_type_dict[track_type_key]
+    return type_matrix
+
+the_matrix = generate_path()
+type_matrix = generate_type_matrix()
 
 
-
-# the_matrix = generate_path()
-# width = len(str(xSize * ySize))
-# for row in the_matrix:
-#     print(' '.join(f"{cell:>{width}}" for cell in row))
+width = len(str(xSize * ySize))
+for row in the_matrix:
+    print(' '.join(f"{cell:>{width}}" for cell in row))
+for row in type_matrix:
+    print(' '.join(f"{cell:>{width}}" for cell in row))

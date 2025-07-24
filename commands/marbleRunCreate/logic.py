@@ -111,10 +111,14 @@ class MarbleRunLogic():
         extrudes = features.extrudeFeatures
         pipes = features.pipeFeatures
         revolves = features.revolveFeatures
+        copy_pastes = features.copyPasteBodies
+        moves = features.moveFeatures
+        mirrors = features.mirrorFeatures
         sketches = comp.sketches
         xyPlane = comp.xYConstructionPlane
         xzPlane = comp.xZConstructionPlane
         yzPlane = comp.yZConstructionPlane
+        zAxis = comp.zConstructionAxis
 
         inputs = args.command.commandInputs
         diameter = inputs.itemById('diameter').value # this is a float
@@ -205,8 +209,8 @@ class MarbleRunLogic():
         extrude_distance = adsk.core.ValueInput.createByString(diameter_text)
         extrude_input.setSymmetricExtent(extrude_distance, True)
         straight_track_extrude = extrudes.add(extrude_input)
-        straight_track_body = straight_track_extrude.bodies.item(0)
-        straight_track_body.name = "Straight +X"
+        track_PXPX_body = straight_track_extrude.bodies.item(0)
+        track_PXPX_body.name = "Track +X+X"
         
         # Cut ball path using pipe feature
         path = adsk.fusion.Path.create(ball_path_line, adsk.fusion.ChainedCurveOptions.noChainedCurves)
@@ -214,7 +218,7 @@ class MarbleRunLogic():
         pipe_input.sectionSize = adsk.core.ValueInput.createByReal(diameter)
         pipe = pipes.add(pipe_input)
         pipe.sectionSize.expression = diameter_text # must set this equal to a string
-        straight_track_body.isVisible = False # hide the body so that it isn't cut by later features
+        track_PXPX_body.isVisible = False # hide the body so that it isn't cut by later features
 
 
 
@@ -322,8 +326,8 @@ class MarbleRunLogic():
         extrude_distance = adsk.core.ValueInput.createByString(diameter_text)
         extrude_input.setSymmetricExtent(extrude_distance, True)
         bent_track_extrude = extrudes.add(extrude_input)
-        bent_track_body = bent_track_extrude.bodies.item(0)
-        bent_track_body.name = "Bent +Y+X"
+        track_PYPX_body = bent_track_extrude.bodies.item(0)
+        track_PYPX_body.name = "Track +Y+X"
 
         # Cut ball paths using pipe features
         path = adsk.fusion.Path.create(input_path_line, adsk.fusion.ChainedCurveOptions.noChainedCurves)
@@ -395,25 +399,126 @@ class MarbleRunLogic():
         prof = bent_track_trim_sketch.profiles.item(0)
         extrude_distance = adsk.core.ValueInput.createByString(diameter_text)
         extrude = extrudes.addSimple(prof, extrude_distance, adsk.fusion.FeatureOperations.CutFeatureOperation)
-        bent_track_body.isVisible = False
+        track_PYPX_body.isVisible = False
 
+        # Create the base tracks
+        track_PYPY = copy_pastes.add(track_PXPX_body)
+        track_PYPY_body = track_PYPY.bodies.item(0)
+        object_collection = adsk.core.ObjectCollection.create()
+        object_collection.add(track_PYPY_body)
+        move_input = moves.createInput2(object_collection)
+        move_input.defineAsRotate(zAxis, adsk.core.ValueInput.createByString('90 deg'))
+        moves.add(move_input)
+        track_PYPY_body.name = 'Track +Y+Y'
+        track_PYPY_body.isVisible = False
+        track_NXNX = copy_pastes.add(track_PXPX_body)
+        track_NXNX_body = track_NXNX.bodies.item(0)
+        object_collection = adsk.core.ObjectCollection.create()
+        object_collection.add(track_NXNX_body)
+        move_input = moves.createInput2(object_collection)
+        move_input.defineAsRotate(zAxis, adsk.core.ValueInput.createByString('180 deg'))
+        moves.add(move_input)
+        track_NXNX_body.name = 'Track -X-X'
+        track_NXNX_body.isVisible = False
+        track_NYNY = copy_pastes.add(track_PXPX_body)
+        track_NYNY_body = track_NYNY.bodies.item(0)
+        object_collection = adsk.core.ObjectCollection.create()
+        object_collection.add(track_NYNY_body)
+        move_input = moves.createInput2(object_collection)
+        move_input.defineAsRotate(zAxis, adsk.core.ValueInput.createByString('270 deg'))
+        moves.add(move_input)
+        track_NYNY_body.name = 'Track -Y-Y'
+        track_NYNY_body.isVisible = False
+
+        track_NXPY = copy_pastes.add(track_PYPX_body)
+        track_NXPY_body = track_NXPY.bodies.item(0)
+        object_collection = adsk.core.ObjectCollection.create()
+        object_collection.add(track_NXPY_body)
+        move_input = moves.createInput2(object_collection)
+        move_input.defineAsRotate(zAxis, adsk.core.ValueInput.createByString('90 deg'))
+        moves.add(move_input)
+        track_NXPY_body.name = 'Track -X+Y'
+        track_NXPY_body.isVisible = False
+        track_NYNX = copy_pastes.add(track_PYPX_body)
+        track_NYNX_body = track_NYNX.bodies.item(0)
+        object_collection = adsk.core.ObjectCollection.create()
+        object_collection.add(track_NYNX_body)
+        move_input = moves.createInput2(object_collection)
+        move_input.defineAsRotate(zAxis, adsk.core.ValueInput.createByString('180 deg'))
+        moves.add(move_input)
+        track_NYNX_body.name = 'Track -Y-X'
+        track_NYNX_body.isVisible = False
+        track_PXNY = copy_pastes.add(track_PYPX_body)
+        track_PXNY_body = track_PXNY.bodies.item(0)
+        object_collection = adsk.core.ObjectCollection.create()
+        object_collection.add(track_PXNY_body)
+        move_input = moves.createInput2(object_collection)
+        move_input.defineAsRotate(zAxis, adsk.core.ValueInput.createByString('270 deg'))
+        moves.add(move_input)
+        track_PXNY_body.name = 'Track +X-Y'
+        track_PXNY_body.isVisible = False
+
+        object_collection = adsk.core.ObjectCollection.create()
+        object_collection.add(track_PYPX_body)
+        mirrorInput = mirrors.createInput(object_collection, yzPlane)
+        track_PYNX = mirrors.add(mirrorInput)
+        track_PYNX_body = track_PYNX.bodies.item(0)
+        track_PYNX_body.name = 'Track +Y-X'
+        track_PYNX_body.isVisible = False
+
+        track_NXNY = copy_pastes.add(track_PYNX_body)
+        track_NXNY_body = track_NXNY.bodies.item(0)
+        object_collection = adsk.core.ObjectCollection.create()
+        object_collection.add(track_NXNY_body)
+        move_input = moves.createInput2(object_collection)
+        move_input.defineAsRotate(zAxis, adsk.core.ValueInput.createByString('90 deg'))
+        moves.add(move_input)
+        track_NXNY_body.name = 'Track -X-Y'
+        track_NXNY_body.isVisible = False
+        track_NYPX = copy_pastes.add(track_PYNX_body)
+        track_NYPX_body = track_NYPX.bodies.item(0)
+        object_collection = adsk.core.ObjectCollection.create()
+        object_collection.add(track_NYPX_body)
+        move_input = moves.createInput2(object_collection)
+        move_input.defineAsRotate(zAxis, adsk.core.ValueInput.createByString('180 deg'))
+        moves.add(move_input)
+        track_NYPX_body.name = 'Track -Y+X'
+        track_NYPX_body.isVisible = False
+        track_PXPY = copy_pastes.add(track_PYNX_body)
+        track_PXPY_body = track_PXPY.bodies.item(0)
+        object_collection = adsk.core.ObjectCollection.create()
+        object_collection.add(track_PXPY_body)
+        move_input = moves.createInput2(object_collection)
+        move_input.defineAsRotate(zAxis, adsk.core.ValueInput.createByString('270 deg'))
+        moves.add(move_input)
+        track_PXPY_body.name = 'Track +X+Y'
+        track_PXPY_body.isVisible = False
+
+        # Create a matrix that represents the track path
         matrix = path_generator.generate_path()
-        # futil.log(f'matrix: {matrix}')
+        futil.log(f'matrix: {matrix}')
+        # Create a matrix showing what type of track should be used
+        type_matrix = path_generator.generate_type_matrix()
+        track_bodies = [
+            track_PXPX_body, track_PYPY_body, track_NXNX_body, track_NYNY_body, 
+            track_PYPX_body, track_NXPY_body, track_NYNX_body, track_PXNY_body,
+            track_PYNX_body, track_NXNY_body, track_NYPX_body, track_PXPY_body
+        ]
 
-        # Create all tracks
-        copy_pastes = features.copyPasteBodies
-        moves = features.moveFeatures
+        # Copy and move the base tracks to the positions specified in the matrix
         x_pos = 0.0
         y_pos = 0.0
         z_pos = 0.0
         z_drop = diameter*slope # float that represents how much the height drops after each cell
         for row in range(len(matrix)):
-            x_pos = row * diameter
+            y_pos = -1 * row * diameter
             for col in range(len(matrix[0])):
-                y_pos = col * diameter
+                x_pos = col * diameter
                 cell_val = matrix[row][col]
-                z_pos = (cell_val-1) * z_drop
-                track_copy = copy_pastes.add(straight_track_body)
+                cell_type = type_matrix[row][col]
+                z_pos = -1 * (cell_val-1) * z_drop
+                cell_body = track_bodies[cell_type]
+                track_copy = copy_pastes.add(cell_body)
                 track_copy_body = track_copy.bodies.item(0)
 
                 object_collection = adsk.core.ObjectCollection.create()
@@ -423,7 +528,7 @@ class MarbleRunLogic():
                 y_delta = adsk.core.ValueInput.createByReal(y_pos)
                 z_delta = adsk.core.ValueInput.createByReal(z_pos)
                 move_input.defineAsTranslateXYZ(x_delta, y_delta, z_delta, True)
-                track_move = moves.add(move_input)
+                moves.add(move_input)
                 
 
 
