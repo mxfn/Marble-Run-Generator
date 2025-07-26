@@ -57,13 +57,13 @@ class MarbleRunLogic():
         self.clearanceValueInput.tooltip = "Clearance between the marble and the track"
 
         self.slopeValueInput = inputs.addValueInput('slope', 'Slope', '', adsk.core.ValueInput.createByReal(0.09))
-        # text_box_message = "This is a <b>Text Box</b> Message.<br>You can use <i>basic</i> HTML formatting."
-        # text_box_input = inputs.addTextBoxCommandInput('text_box_input', 'Text Box', text_box_message, 2, True)
-        # text_box_input.isFullWidth = True
         slope = self.slopeValueInput.value
         angle = abs(math.degrees(math.atan2(slope, 1.0)))
-        angle_text = f'{angle:.2f} deg' # display angle with two decimal places
+        angle_text = f'{angle:.2f} deg' # display angle to two decimal places
         self.angleTextInput = inputs.addTextBoxCommandInput('angle', 'Angle', angle_text, 1, True)
+
+        self.errorMessageTextInput = inputs.addTextBoxCommandInput('errMessage', '', '', 2, True)
+        self.errorMessageTextInput.isFullWidth = True
 
         skipValidate = False
 
@@ -75,13 +75,18 @@ class MarbleRunLogic():
             if changedInput.id == 'slope':
                 slope = self.slopeValueInput.value
                 angle = abs(math.degrees(math.atan2(slope, 1.0)))
-                angle_text = f'{angle:.2f} deg' # display angle with two decimal places
+                angle_text = f'{angle:.2f} deg' # display angle to two decimal places
                 self.angleTextInput.text = angle_text
                 
 
     def HandleValidateInputs(self, args: adsk.core.ValidateInputsEventArgs):
-        pass
-
+        if not skipValidate:
+            self.errorMessageTextInput.text = ''
+            # Make sure the slope is greater than 0
+            if self.slopeValueInput.value <= 0.0:
+                self.errorMessageTextInput.text = 'The slope must be greater than 0'
+                args.areInputsValid = False
+                return
 
     def HandleExecute(self, args: adsk.core.CommandEventArgs):
         inputs = args.command.commandInputs
@@ -95,6 +100,7 @@ class MarbleRunLogic():
         copy_pastes = features.copyPasteBodies
         moves = features.moveFeatures
         mirrors = features.mirrorFeatures
+        combines = features.combineFeatures
         sketches = comp.sketches
         xyPlane = comp.xYConstructionPlane
         xzPlane = comp.xZConstructionPlane
@@ -102,9 +108,12 @@ class MarbleRunLogic():
         zAxis = comp.zConstructionAxis
 
         num_x_cells = inputs.itemById('num_x_cells').valueOne # int
-        num_y_cells = inputs.itemById('num_y_cells').valueOne
+        num_y_cells = inputs.itemById('num_y_cells').valueOne # int
+        num_x_cells_text = inputs.itemById('num_x_cells').expressionOne # Str
+        num_y_cells_text = inputs.itemById('num_y_cells').expressionOne # Str
 
         slope = inputs.itemById('slope').value
+        slope_text = inputs.itemById('slope').expression
         # slope = 0.09
 
         ball_diameter = inputs.itemById('diameter').value # this is a float
@@ -146,7 +155,7 @@ class MarbleRunLogic():
         textPoint.translateBy(adsk.core.Vector3D.create(-0.25,0.25,0))
         top_line_v_dim = dimensions.addDistanceDimension(top_line.startSketchPoint, top_line.endSketchPoint, adsk.fusion.DimensionOrientations.VerticalDimensionOrientation, textPoint)
         # top_line_v_dim.parameter.expression = f'{diameter} cm * 0.09'
-        top_line_v_dim.parameter.expression = f'{diameter_text} * {slope}'
+        top_line_v_dim.parameter.expression = f'{diameter_text} * {slope_text}'
         textPoint = top_line.geometry.evaluator.getPointAtParameter(0.5)[1].copy()
         textPoint.translateBy(adsk.core.Vector3D.create(0,0.25,0))
         top_line_h_dim = dimensions.addDistanceDimension(top_line.startSketchPoint, top_line.endSketchPoint, adsk.fusion.DimensionOrientations.HorizontalDimensionOrientation, textPoint)
@@ -208,8 +217,84 @@ class MarbleRunLogic():
         pipe_input.sectionSize = adsk.core.ValueInput.createByReal(diameter)
         pipe = pipes.add(pipe_input)
         pipe.sectionSize.expression = diameter_text # must set this equal to a string
-        track_PXPX_body.isVisible = False # hide the body so that it isn't cut by later features
 
+        # Make the track tall so that it easily combines into a 3D printable solid later
+        track_footprint_sketch = sketches.add(xyPlane)
+        track_footprint_sketch.name = 'Track Footprint'
+        lines = track_footprint_sketch.sketchCurves.sketchLines
+        points = track_footprint_sketch.sketchPoints
+        origin_point = track_footprint_sketch.originPoint
+        constraints = track_footprint_sketch.geometricConstraints
+        dimensions = track_footprint_sketch.sketchDimensions
+
+        rectangle_point = adsk.core.Point3D.create(-1*diameter/2, diameter/2, 0)
+        rec_lines = lines.addCenterPointRectangle(origin_point.geometry.copy(), rectangle_point)
+        for i in range(rec_lines.count):
+            rec_line = rec_lines.item(i)
+            if i%2 == 0:
+                constraints.addHorizontal(rec_line)
+            else:
+                constraints.addVertical(rec_line)
+        top_rec_line = rec_lines.item(0)
+        right_rec_line = rec_lines.item(1)
+        constraints.addEqual(top_rec_line, right_rec_line)
+        textPoint = top_rec_line.geometry.evaluator.getPointAtParameter(0.5)[1].copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(0, 0.1, 0))
+        dimension = dimensions.addDistanceDimension(top_rec_line.startSketchPoint, top_rec_line.endSketchPoint, adsk.fusion.DimensionOrientations.AlignedDimensionOrientation, textPoint)
+        dimension.parameter.expression = f'{diameter_text}'
+        textPoint = top_rec_line.endSketchPoint.geometry.copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(-0.2, 0.2, 0))
+        dimension = dimensions.addDistanceDimension(top_rec_line.endSketchPoint, origin_point, adsk.fusion.DimensionOrientations.HorizontalDimensionOrientation, textPoint)
+        dimension.parameter.expression = f'{diameter_text} / 2'
+        textPoint = top_rec_line.endSketchPoint.geometry.copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(0.2, -0.2, 0))
+        dimension = dimensions.addDistanceDimension(top_rec_line.endSketchPoint, origin_point, adsk.fusion.DimensionOrientations.VerticalDimensionOrientation, textPoint)
+        dimension.parameter.expression = f'{diameter_text} / 2'
+
+        prof = track_footprint_sketch.profiles.item(0)
+        extrude_input = extrudes.createInput(prof, adsk.fusion.FeatureOperations.JoinFeatureOperation)
+        extrude_offset_text = f'-1 * ({num_x_cells_text} * {num_y_cells_text} * {diameter_text} * {slope_text} + {diameter_text} / 2 + 10 mm)'
+        start_offset = adsk.core.ValueInput.createByString(extrude_offset_text)
+        extrude_input.startExtent = adsk.fusion.OffsetStartDefinition.create(start_offset)
+        # Extract the extrude target face by finding the face created by the bottom line of the straight track sketch
+        # Could also extrude to the body instead of the face, which would be much simpler to implement. That didn't occur to me until after writing this code.
+        # extrude_target_face = bent_track_extrude.sideFaces.item(1) # This method does not reliably extract the correct face
+        extrude_target_face = None
+        straight_track_extrude_faces = straight_track_extrude.sideFaces
+        bottom_line_vertex_1 = list(bottom_line.startSketchPoint.geometry.asArray()) # the documentation says asArray returns a list but it appears to actually return a tuple
+        bottom_line_vertex_2 = list(bottom_line.endSketchPoint.geometry.asArray())
+        # Convert the sketch's coordinates to design's coordinates
+        bottom_line_vertex_1[2] = -1*bottom_line_vertex_1[1]
+        bottom_line_vertex_1[1] = 0
+        bottom_line_vertex_2[2] = -1*bottom_line_vertex_2[1]
+        bottom_line_vertex_2[1] = 0
+        # futil.log(f'bottom line start vertex: {bottom_line_vertex_1}')
+        # futil.log(f'bottom line end vertex: {bottom_line_vertex_2}')
+        for straight_track_extrude_face in straight_track_extrude_faces:
+            # futil.log(f'face area: {straight_track_extrude_face.area}')
+            for edge in straight_track_extrude_face.edges:
+                # futil.log(f'edge length: {edge.length}')
+                edge_vertex_1 = list(edge.startVertex.geometry.asArray())
+                edge_vertex_2 = list(edge.endVertex.geometry.asArray())
+                edge_vertex_1[1] = 0.0
+                edge_vertex_2[1] = 0.0
+                # futil.log(f'edge start vertex: {edge_vertex_1}')
+                # futil.log(f'edge end vertex: {edge_vertex_2}')
+                if (
+                    (are_points_close(edge_vertex_1, bottom_line_vertex_1) and are_points_close(edge_vertex_2, bottom_line_vertex_2))
+                    or (are_points_close(edge_vertex_1, bottom_line_vertex_2) and are_points_close(edge_vertex_2, bottom_line_vertex_1))
+                ):
+                    extrude_target_face = straight_track_extrude_face
+            if extrude_target_face:
+                break
+        # futil.log(f'final face area: {extrude_target_face.area}')
+        extrude_input.setOneSideExtent(
+            adsk.fusion.ToEntityExtentDefinition.create(extrude_target_face, False),  # False = don't chain faces
+            adsk.fusion.ExtentDirections.PositiveExtentDirection
+        )
+        extrudes.add(extrude_input)
+
+        track_PXPX_body.isVisible = False # hide the body so that it isn't cut by later features
 
 
         # Bent track input path sketch
@@ -229,7 +314,7 @@ class MarbleRunLogic():
         textPoint = input_path_line.endSketchPoint.geometry.copy()
         textPoint.translateBy(adsk.core.Vector3D.create(0.1,-0.1,0))
         input_path_line_v_dim = dimensions.addDistanceDimension(input_path_line.endSketchPoint, input_path_line.startSketchPoint, adsk.fusion.DimensionOrientations.HorizontalDimensionOrientation, textPoint)
-        input_path_line_v_dim.parameter.expression = f'{slope} * ( {diameter_text} / 2 + 5 mm )'
+        input_path_line_v_dim.parameter.expression = f'{slope_text} * ( {diameter_text} / 2 + 5 mm )'
         textPoint = input_path_line.geometry.evaluator.getPointAtParameter(0.5)[1].copy()
         textPoint.translateBy(adsk.core.Vector3D.create(-0.25,0,0))
         input_path_line_h_dim = dimensions.addDistanceDimension(input_path_line.endSketchPoint, input_path_line.startSketchPoint, adsk.fusion.DimensionOrientations.VerticalDimensionOrientation, textPoint)
@@ -285,7 +370,7 @@ class MarbleRunLogic():
         textPoint = output_path_line.endSketchPoint.geometry.copy()
         textPoint.translateBy(adsk.core.Vector3D.create(0.1,-0.1,0))
         output_path_line_v_dim = dimensions.addDistanceDimension(output_path_line.startSketchPoint, output_path_line.endSketchPoint, adsk.fusion.DimensionOrientations.VerticalDimensionOrientation, textPoint)
-        output_path_line_v_dim.parameter.expression = f'{slope} * ( {diameter_text} / 2 + 5 mm )'
+        output_path_line_v_dim.parameter.expression = f'{slope_text} * ( {diameter_text} / 2 + 5 mm )'
 
         # Add the main dimensions
         bottom_rec_line = rec_lines.item(2)
@@ -389,6 +474,23 @@ class MarbleRunLogic():
         prof = bent_track_trim_sketch.profiles.item(0)
         extrude_distance = adsk.core.ValueInput.createByString(diameter_text)
         extrude = extrudes.addSimple(prof, extrude_distance, adsk.fusion.FeatureOperations.CutFeatureOperation)
+
+        # Make the track tall so that it easily combines into a 3D printable solid later
+        prof = track_footprint_sketch.profiles.item(0)
+        extrude_input = extrudes.createInput(prof, adsk.fusion.FeatureOperations.JoinFeatureOperation)
+        # extrude_distance_value_input = adsk.core.ValueInput.createByString(diameter_text)
+        # extrude_distance_extent = adsk.fusion.DistanceExtentDefinition.create(extrude_distance_value_input)
+        # straight_track_extrude = extrudes.add(extrude_input)
+        extrude_offset_text = f'-1 * ({num_x_cells_text} * {num_y_cells_text} * {diameter_text} * {slope_text} + {diameter_text} / 2 + 10 mm)'
+        start_offset = adsk.core.ValueInput.createByString(extrude_offset_text)
+        extrude_input.startExtent = adsk.fusion.OffsetStartDefinition.create(start_offset)
+        extent_definition = adsk.fusion.ToEntityExtentDefinition.create(track_PYPX_body, True)
+        extrude_input.setOneSideExtent(
+            extent_definition,
+            adsk.fusion.ExtentDirections.PositiveExtentDirection
+        )
+        extrudes.add(extrude_input)
+
         track_PYPX_body.isVisible = False
 
         # Create the base tracks
@@ -489,7 +591,7 @@ class MarbleRunLogic():
         futil.log(f'matrix: {matrix}')
         # Create a matrix showing what type of track should be used
         type_matrix = path_generator.generate_type_matrix()
-        track_bodies = [
+        base_track_bodies = [
             track_PXPX_body, track_PYPY_body, track_NXNX_body, track_NYNY_body, 
             track_PYPX_body, track_NXPY_body, track_NYNX_body, track_PXNY_body,
             track_PYNX_body, track_NXNY_body, track_NYPX_body, track_PXPY_body
@@ -500,6 +602,7 @@ class MarbleRunLogic():
         y_pos = 0.0
         z_pos = 0.0
         z_drop = diameter*slope # float that represents how much the height drops after each cell
+        copied_track_bodies = []
         for row in range(len(matrix)):
             y_pos = -1 * row * diameter
             for col in range(len(matrix[0])):
@@ -507,7 +610,7 @@ class MarbleRunLogic():
                 cell_val = matrix[row][col]
                 cell_type = type_matrix[row][col]
                 z_pos = -1 * (cell_val-1) * z_drop
-                cell_body = track_bodies[cell_type]
+                cell_body = base_track_bodies[cell_type]
                 track_copy = copy_pastes.add(cell_body)
                 track_copy_body = track_copy.bodies.item(0)
 
@@ -519,7 +622,82 @@ class MarbleRunLogic():
                 z_delta = adsk.core.ValueInput.createByReal(z_pos)
                 move_input.defineAsTranslateXYZ(x_delta, y_delta, z_delta, True)
                 moves.add(move_input)
+
+                copied_track_bodies.append(track_copy_body)
                 
+
+        # Combine all the track segments together
+        target_body = copied_track_bodies[0]
+        tool_bodies = adsk.core.ObjectCollection.create()
+        for i in range(1, len(copied_track_bodies)):
+            tool_body = copied_track_bodies[i]
+            tool_bodies.add(tool_body)
+        combine_feature_input = combines.createInput(target_body, tool_bodies)
+        combine_feature_input.operation = adsk.fusion.FeatureOperations.JoinFeatureOperation
+        combine_feature_input.isKeepToolBodies = False
+        combines.add(combine_feature_input)
+
+        # Trim the track so that it has a flat base
+        track_base_trimmer_sketch = sketches.add(xyPlane)
+        track_base_trimmer_sketch.name = 'Track Base Trimmer'
+        lines = track_base_trimmer_sketch.sketchCurves.sketchLines
+        points = track_base_trimmer_sketch.sketchPoints
+        origin_point = track_base_trimmer_sketch.originPoint
+        constraints = track_base_trimmer_sketch.geometricConstraints
+        dimensions = track_base_trimmer_sketch.sketchDimensions
+
+        rectangle_point_1 = adsk.core.Point3D.create(-1*diameter/2, diameter/2, 0)
+        rectangle_point_2 = adsk.core.Point3D.create(num_x_cells*diameter-1*diameter/2, -1*num_y_cells*diameter+diameter/2, 0)
+        rec_lines = lines.addTwoPointRectangle(rectangle_point_1, rectangle_point_2)
+        for i in range(rec_lines.count):
+            rec_line = rec_lines.item(i)
+            if i%2 == 0:
+                constraints.addHorizontal(rec_line)
+            else:
+                constraints.addVertical(rec_line)
+        top_rec_line = rec_lines.item(0)
+        left_rec_line = rec_lines.item(3)
+        textPoint = top_rec_line.geometry.evaluator.getPointAtParameter(0.5)[1].copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(0, 0.1, 0))
+        dimension = dimensions.addDistanceDimension(top_rec_line.startSketchPoint, top_rec_line.endSketchPoint, adsk.fusion.DimensionOrientations.AlignedDimensionOrientation, textPoint)
+        dimension.parameter.expression = f'{num_x_cells} * {diameter_text}'
+        textPoint = left_rec_line.geometry.evaluator.getPointAtParameter(0.5)[1].copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(-0.1, 0, 0))
+        dimension = dimensions.addDistanceDimension(left_rec_line.startSketchPoint, left_rec_line.endSketchPoint, adsk.fusion.DimensionOrientations.AlignedDimensionOrientation, textPoint)
+        dimension.parameter.expression = f'{num_y_cells} * {diameter_text}'
+        textPoint = top_rec_line.startSketchPoint.geometry.copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(0.2, 0.2, 0))
+        dimension = dimensions.addDistanceDimension(top_rec_line.startSketchPoint, origin_point, adsk.fusion.DimensionOrientations.HorizontalDimensionOrientation, textPoint)
+        dimension.parameter.expression = f'{diameter_text} / 2'
+        textPoint = top_rec_line.startSketchPoint.geometry.copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(-0.2, -0.2, 0))
+        dimension = dimensions.addDistanceDimension(top_rec_line.startSketchPoint, origin_point, adsk.fusion.DimensionOrientations.VerticalDimensionOrientation, textPoint)
+        dimension.parameter.expression = f'{diameter_text} / 2'
+
+        prof = track_base_trimmer_sketch.profiles.item(0)
+        extrude_input = extrudes.createInput(prof, adsk.fusion.FeatureOperations.CutFeatureOperation)
+        # extrude_distance_value_input = adsk.core.ValueInput.createByString(diameter_text)
+        # extrude_distance_extent = adsk.fusion.DistanceExtentDefinition.create(extrude_distance_value_input)
+        # straight_track_extrude = extrudes.add(extrude_input)
+        extrude_offset_text = f'-1 * ({num_x_cells_text} * {num_y_cells_text} * {diameter_text} * {slope_text} + {diameter_text} / 2 + 10 mm)'
+        start_offset = adsk.core.ValueInput.createByString(extrude_offset_text)
+        extrude_input.startExtent = adsk.fusion.OffsetStartDefinition.create(start_offset)
+        extrude_distance = adsk.core.ValueInput.createByString(f'-1 * ({num_x_cells_text} * {num_y_cells_text} * {diameter_text} * {slope_text} + {diameter_text} / 2 + 10 mm)')
+        extrude_input.setOneSideExtent(
+            adsk.fusion.DistanceExtentDefinition.create(extrude_distance),  # False = don't chain faces
+            adsk.fusion.ExtentDirections.PositiveExtentDirection
+        )
+        extrudes.add(extrude_input)
+
+
+        # extent_distance_2 = adsk.fusion.DistanceExtentDefinition.create(mm10)
+        # # Create a start extent that starts from a brep face with an offset of 10 mm.
+        # start_from = adsk.fusion.FromEntityStartDefinition.create(body1.faces.item(0), mm10)
+        # # taperAngle should be 0 because extrude start face is not a planar face in this case
+        # extrudeInput.setOneSideExtent(extent_distance_2, adsk.fusion.ExtentDirections.PositiveExtentDirection)        
+        # extrudeInput.startExtent = start_from
+        # # Create the extrusion
+        # extrude3 = extrudes.add(extrudeInput)
 
 
 
@@ -599,6 +777,10 @@ class MarbleRunLogic():
 
         attribs = des.attributes
         attribs.add('MarbleRun', 'settings', jsonSettings)
+
+
+def are_points_close(p1, p2, tol=1e-6):
+    return math.dist(p1, p2) < tol
 
 
 def create_pipe(component, path, sectionSize: str):
