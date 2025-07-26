@@ -101,6 +101,8 @@ class MarbleRunLogic():
         moves = features.moveFeatures
         mirrors = features.mirrorFeatures
         combines = features.combineFeatures
+        removes = features.removeFeatures
+        shells = features.shellFeatures
         sketches = comp.sketches
         xyPlane = comp.xYConstructionPlane
         xzPlane = comp.xZConstructionPlane
@@ -220,7 +222,7 @@ class MarbleRunLogic():
 
         # Make the track tall so that it easily combines into a 3D printable solid later
         track_footprint_sketch = sketches.add(xyPlane)
-        track_footprint_sketch.name = 'Track Footprint'
+        track_footprint_sketch.name = 'Track Unit Footprint'
         lines = track_footprint_sketch.sketchCurves.sketchLines
         points = track_footprint_sketch.sketchPoints
         origin_point = track_footprint_sketch.originPoint
@@ -625,7 +627,6 @@ class MarbleRunLogic():
 
                 copied_track_bodies.append(track_copy_body)
                 
-
         # Combine all the track segments together
         target_body = copied_track_bodies[0]
         tool_bodies = adsk.core.ObjectCollection.create()
@@ -635,11 +636,17 @@ class MarbleRunLogic():
         combine_feature_input = combines.createInput(target_body, tool_bodies)
         combine_feature_input.operation = adsk.fusion.FeatureOperations.JoinFeatureOperation
         combine_feature_input.isKeepToolBodies = False
-        combines.add(combine_feature_input)
+        combine = combines.add(combine_feature_input)
+        combine_body = combine.bodies.item(0)
+        combine_body.name = 'Marble Run'
+
+        # Remove the base track bodies to declutter the body folder
+        for body in base_track_bodies:
+            removes.add(body)
 
         # Trim the track so that it has a flat base
         track_base_trimmer_sketch = sketches.add(xyPlane)
-        track_base_trimmer_sketch.name = 'Track Base Trimmer'
+        track_base_trimmer_sketch.name = 'Base Flattener'
         lines = track_base_trimmer_sketch.sketchCurves.sketchLines
         points = track_base_trimmer_sketch.sketchPoints
         origin_point = track_base_trimmer_sketch.originPoint
@@ -687,7 +694,39 @@ class MarbleRunLogic():
             adsk.fusion.DistanceExtentDefinition.create(extrude_distance),  # False = don't chain faces
             adsk.fusion.ExtentDirections.PositiveExtentDirection
         )
-        extrudes.add(extrude_input)
+        flat_base_extrude = extrudes.add(extrude_input)
+
+        # Shell the body to reduce material during 3D printing
+        object_collection = adsk.core.ObjectCollection.create()
+        object_collection.add(combine_body)
+        shell_input = shells.createInput(object_collection)
+        shell_input.insideThickness = adsk.core.ValueInput.createByReal(0.3)
+        # Extract the face to remove. In the future, try to figure out if you can extract the face from one of the previous features
+        # face_to_remove = flat_base_extrude.endFaces.item(0) # this doesn't work. Seems like endFaces might be empty
+        faces = combine_body.faces
+        face_to_remove = None
+        negative_Z = adsk.core.Vector3D.create(0, 0, -1)
+        for face in faces:
+            (success, normal) = face.evaluator.getNormalAtParameter(adsk.core.Point2D.create(0.5, 0.5))
+            if success:
+                dot_product = normal.dotProduct(negative_Z)
+                if dot_product > (1.0 - 1e-6):
+                    face_to_remove = face
+            if face_to_remove:
+                break
+        object_collection = adsk.core.ObjectCollection.create()
+        object_collection.add(face_to_remove)
+        shell_input.inputEntities = object_collection
+        shell = shells.add(shell_input)
+
+        # Put the timeline features into a group
+        timeline_groups = des.timeline.timelineGroups
+        first_timeline_feature = straight_track_sketch
+        last_timeline_feature = shell
+        timeline_start_index = first_timeline_feature.timelineObject.index
+        timeline_end_index = last_timeline_feature.timelineObject.index
+        timeline_group = timeline_groups.add(timeline_start_index, timeline_end_index)
+        timeline_group.name = 'Marble Run'
 
 
         # extent_distance_2 = adsk.fusion.DistanceExtentDefinition.create(mm10)
