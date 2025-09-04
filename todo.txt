@@ -1,15 +1,21 @@
 
 
-Generate space filling curve
-Generate library of shapes
+Try using cursor
+Prevent the command dialog from accepting negative slopes or take the absolute value of the slope and don't accept user parameters for the slope
+Make sure the code is efficient enough to generate at least a 15x15 grid (but probably not more than 18x18 because of the vertical height that would require)
+Create an elevator made entirely out of steel balls. Alternatively, create an automatic ball release similar to your clock's timekeeping
+Add a ball to the 3D model
+Add caching
+Add user-editable parameters (ball_diam, clearance, slope). Make sure each track unit moves where it's supposed to whenever a parameter changes
 
 
 Bonus:
 Provide option to allow tunnels (no bends)
-Allow for non square boundaries
-Create an elevator to lift the balls back up
+Clean up the path_generator code
 
 
+
+If the ball gets stuck at the bend, consider adding a drop instead of increasing the angle
 
 Useful references:
 https://ramoyer.com/2020/11/Ball-Race.html

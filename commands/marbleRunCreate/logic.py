@@ -31,7 +31,7 @@ class MarbleRunLogic():
         
         # Define the default for each value and then check to see if there
         # were cached settings and override the default if a setting exists.
-        self.diameter = '1.3'
+        self.diameter = '0.9525'
         if settings:
             self.diameter = settings['Diameter']
 
@@ -47,16 +47,16 @@ class MarbleRunLogic():
         # Create the command inputs to define the contents of the command dialog.
         self.widthValueInput = inputs.addIntegerSliderCommandInput('num_x_cells', 'Width', 2, 15, False)
         self.widthValueInput.tooltip = "Number of cells in the X direction"
-        self.widthValueInput.valueOne = 5 # set default value
+        self.widthValueInput.valueOne = 15 # set default value
         self.depthValueInput = inputs.addIntegerSliderCommandInput('num_y_cells', 'Depth', 2, 15, False)
         self.depthValueInput.tooltip = "Number of cells in the Y direction"
-        self.depthValueInput.valueOne = 5 # set default value
+        self.depthValueInput.valueOne = 13 # set default value
 
         self.diameterValueInput = inputs.addValueInput('diameter', 'Marble Diameter', 'mm', adsk.core.ValueInput.createByReal(float(self.diameter)))
         self.clearanceValueInput = inputs.addValueInput('clearance', 'Clearance', 'mm', adsk.core.ValueInput.createByReal(0.015))
         self.clearanceValueInput.tooltip = "Clearance between the marble and the track"
 
-        self.slopeValueInput = inputs.addValueInput('slope', 'Slope', '', adsk.core.ValueInput.createByReal(0.09))
+        self.slopeValueInput = inputs.addValueInput('slope', 'Slope', '', adsk.core.ValueInput.createByReal(0.06))
         slope = self.slopeValueInput.value
         angle = abs(math.degrees(math.atan2(slope, 1.0)))
         angle_text = f'{angle:.2f} deg' # display angle to two decimal places
@@ -117,6 +117,7 @@ class MarbleRunLogic():
         slope = inputs.itemById('slope').value
         slope_text = inputs.itemById('slope').expression
         # slope = 0.09
+        super_slope = 0.15 # slope used for the first segment of the bent track output path.  0.15 slope corresponds to an angle of 8.53 degrees
 
         ball_diameter = inputs.itemById('diameter').value # this is a float
         ball_diameter_text = inputs.itemById('diameter').expression # this extracts exactly what the user typed as a string. Works for both numbers and user parameter names.
@@ -126,6 +127,8 @@ class MarbleRunLogic():
 
         diameter = ball_diameter + 2*clearance # float
         diameter_text = f'({ball_diameter_text} + 2 * {clearance_text})' # String
+
+        super_z_drop = slope*(diameter/2) + super_slope*(ball_diameter/4) + slope*(diameter/2-ball_diameter/4) # float
 
         # Straight track sketch
         straight_track_sketch = sketches.add(xzPlane)
@@ -255,7 +258,7 @@ class MarbleRunLogic():
 
         prof = track_footprint_sketch.profiles.item(0)
         extrude_input = extrudes.createInput(prof, adsk.fusion.FeatureOperations.JoinFeatureOperation)
-        extrude_offset_text = f'-1 * ({num_x_cells_text} * {num_y_cells_text} * {diameter_text} * {slope_text} + {diameter_text} / 2 + 10 mm)'
+        extrude_offset_text = f'-1 * ({num_x_cells_text} * {num_y_cells_text} * {super_z_drop} cm + {diameter_text} / 2 + 10 mm)'
         start_offset = adsk.core.ValueInput.createByString(extrude_offset_text)
         extrude_input.startExtent = adsk.fusion.OffsetStartDefinition.create(start_offset)
         # Extract the extrude target face by finding the face created by the bottom line of the straight track sketch
@@ -361,18 +364,31 @@ class MarbleRunLogic():
         top_rec_line = rec_lines.item(0)
         constraints.addMidPoint(projected_extr_ref_point, top_rec_line)
 
-        # Create output path line
+        # Create output path lines
         start_point = origin_point
         end_point = adsk.core.Point3D.create(1, 1, 0)
+        output_path_steep_line = lines.addByTwoPoints(start_point, end_point)
+        textPoint = output_path_steep_line.startSketchPoint.geometry.copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(0.2,-0.1,0))
+        output_path_steep_line_h_dim = dimensions.addDistanceDimension(output_path_steep_line.startSketchPoint, output_path_steep_line.endSketchPoint, adsk.fusion.DimensionOrientations.HorizontalDimensionOrientation, textPoint)
+        output_path_steep_line_h_dim.parameter.expression = f'{ball_diameter_text} / 4'
+        textPoint = output_path_steep_line.endSketchPoint.geometry.copy()
+        textPoint.translateBy(adsk.core.Vector3D.create(0.1,-0.1,0))
+        output_path_steep_line_v_dim = dimensions.addDistanceDimension(output_path_steep_line.startSketchPoint, output_path_steep_line.endSketchPoint, adsk.fusion.DimensionOrientations.VerticalDimensionOrientation, textPoint)
+        output_path_steep_line_v_dim.parameter.expression = f'{super_slope} * {ball_diameter_text} / 4'
+
+        start_point = output_path_steep_line.endSketchPoint
+        end_point = start_point.geometry.copy()
+        end_point.translateBy(adsk.core.Vector3D.create(1, 1, 0))
         output_path_line = lines.addByTwoPoints(start_point, end_point)
         textPoint = output_path_line.startSketchPoint.geometry.copy()
         textPoint.translateBy(adsk.core.Vector3D.create(0.2,-0.1,0))
         output_path_line_h_dim = dimensions.addDistanceDimension(output_path_line.startSketchPoint, output_path_line.endSketchPoint, adsk.fusion.DimensionOrientations.HorizontalDimensionOrientation, textPoint)
-        output_path_line_h_dim.parameter.expression = f'{diameter_text} / 2 + 5 mm'
+        output_path_line_h_dim.parameter.expression = f'{ball_diameter_text} / 2'
         textPoint = output_path_line.endSketchPoint.geometry.copy()
         textPoint.translateBy(adsk.core.Vector3D.create(0.1,-0.1,0))
         output_path_line_v_dim = dimensions.addDistanceDimension(output_path_line.startSketchPoint, output_path_line.endSketchPoint, adsk.fusion.DimensionOrientations.VerticalDimensionOrientation, textPoint)
-        output_path_line_v_dim.parameter.expression = f'{slope_text} * ( {diameter_text} / 2 + 5 mm )'
+        output_path_line_v_dim.parameter.expression = f'{slope_text} * ( {ball_diameter_text} / 2 )'
 
         # Add the main dimensions
         bottom_rec_line = rec_lines.item(2)
@@ -412,6 +428,13 @@ class MarbleRunLogic():
         pipe_input.sectionSize = adsk.core.ValueInput.createByReal(diameter)
         pipe = pipes.add(pipe_input)
         pipe.sectionSize.expression = diameter_text
+
+        path = adsk.fusion.Path.create(output_path_steep_line, adsk.fusion.ChainedCurveOptions.noChainedCurves)
+        pipe_input = pipes.createInput(path, adsk.fusion.FeatureOperations.CutFeatureOperation)
+        pipe_input.sectionSize = adsk.core.ValueInput.createByReal(diameter)
+        pipe = pipes.add(pipe_input)
+        pipe.sectionSize.expression = diameter_text
+
         path = adsk.fusion.Path.create(output_path_line, adsk.fusion.ChainedCurveOptions.noChainedCurves)
         pipe_input = pipes.createInput(path, adsk.fusion.FeatureOperations.CutFeatureOperation)
         pipe_input.sectionSize = adsk.core.ValueInput.createByReal(diameter)
@@ -444,10 +467,29 @@ class MarbleRunLogic():
         constraints.addVertical(diameter_line)
 
         prof = sphere_sketch.profiles.item(0)
-        revInput = revolves.createInput(prof, diameter_line, adsk.fusion.FeatureOperations.CutFeatureOperation)
+        revInput = revolves.createInput(prof, diameter_line, adsk.fusion.FeatureOperations.NewBodyFeatureOperation)
         revInput.setAngleExtent(False, adsk.core.ValueInput.createByReal(math.pi * 2))
         revolve = revolves.add(revInput)
+        sphere_body = revolve.bodies.item(0)
 
+        target_body = track_PYPX_body
+        tool_bodies = adsk.core.ObjectCollection.create()
+        tool_bodies.add(sphere_body)
+        combine_feature_input = combines.createInput(target_body, tool_bodies)
+        combine_feature_input.operation = adsk.fusion.FeatureOperations.CutFeatureOperation
+        combine_feature_input.isKeepToolBodies = True
+        combine = combines.add(combine_feature_input)
+
+        object_collection = adsk.core.ObjectCollection.create()
+        object_collection.add(sphere_body)
+        move_input = moves.createInput2(object_collection)
+        move_input.defineAsPointToPoint(bent_track_input_path_sketch.originPoint, output_path_line.startSketchPoint)
+        moves.add(move_input)
+
+        combine_feature_input = combines.createInput(target_body, tool_bodies)
+        combine_feature_input.operation = adsk.fusion.FeatureOperations.CutFeatureOperation
+        combine_feature_input.isKeepToolBodies = False
+        combine = combines.add(combine_feature_input)
 
         # Bent track trim sketch
         bent_track_trim_sketch = sketches.add(xzPlane) # if you want a point to be at (a, b), you must input (a, -b)
@@ -483,7 +525,7 @@ class MarbleRunLogic():
         # extrude_distance_value_input = adsk.core.ValueInput.createByString(diameter_text)
         # extrude_distance_extent = adsk.fusion.DistanceExtentDefinition.create(extrude_distance_value_input)
         # straight_track_extrude = extrudes.add(extrude_input)
-        extrude_offset_text = f'-1 * ({num_x_cells_text} * {num_y_cells_text} * {diameter_text} * {slope_text} + {diameter_text} / 2 + 10 mm)'
+        extrude_offset_text = f'-1 * ({num_x_cells_text} * {num_y_cells_text} * {super_z_drop} cm + {diameter_text} / 2 + 10 mm)'
         start_offset = adsk.core.ValueInput.createByString(extrude_offset_text)
         extrude_input.startExtent = adsk.fusion.OffsetStartDefinition.create(start_offset)
         extent_definition = adsk.fusion.ToEntityExtentDefinition.create(track_PYPX_body, True)
@@ -600,32 +642,88 @@ class MarbleRunLogic():
         ]
 
         # Copy and move the base tracks to the positions specified in the matrix
+
+        # find the starting cell
+        start_row = 0
+        start_col = 0
+        for row in range(len(matrix)):
+            for col in range(len(matrix[0])):
+                if matrix[row][col] == 1:
+                    start_row = row
+                    start_col = col
+
+        row = start_row
+        col = start_col
         x_pos = 0.0
         y_pos = 0.0
         z_pos = 0.0
-        z_drop = diameter*slope # float that represents how much the height drops after each cell
+        next_z_pos = 0.0
+        # z_drop = diameter*slope # float that represents how much the height drops after each cell
         copied_track_bodies = []
-        for row in range(len(matrix)):
+        is_next_cell_found = True
+        while is_next_cell_found:
+            cell_val = matrix[row][col]
+            expected_next_cell_val = cell_val + 1
+            cell_type = type_matrix[row][col]
+            x_pos = col * diameter
             y_pos = -1 * row * diameter
-            for col in range(len(matrix[0])):
-                x_pos = col * diameter
-                cell_val = matrix[row][col]
-                cell_type = type_matrix[row][col]
-                z_pos = -1 * (cell_val-1) * z_drop
-                cell_body = base_track_bodies[cell_type]
-                track_copy = copy_pastes.add(cell_body)
-                track_copy_body = track_copy.bodies.item(0)
+            z_pos = next_z_pos
+            if cell_type in [0, 1, 2, 3]:
+                next_z_pos = z_pos - diameter*slope
+            else:
+                next_z_pos = z_pos - super_z_drop
+            cell_body = base_track_bodies[cell_type]
+            track_copy = copy_pastes.add(cell_body)
+            track_copy_body = track_copy.bodies.item(0)
 
-                object_collection = adsk.core.ObjectCollection.create()
-                object_collection.add(track_copy_body)
-                move_input = moves.createInput2(object_collection)
-                x_delta = adsk.core.ValueInput.createByReal(x_pos)
-                y_delta = adsk.core.ValueInput.createByReal(y_pos)
-                z_delta = adsk.core.ValueInput.createByReal(z_pos)
-                move_input.defineAsTranslateXYZ(x_delta, y_delta, z_delta, True)
-                moves.add(move_input)
+            object_collection = adsk.core.ObjectCollection.create()
+            object_collection.add(track_copy_body)
+            move_input = moves.createInput2(object_collection)
+            x_delta = adsk.core.ValueInput.createByReal(x_pos)
+            y_delta = adsk.core.ValueInput.createByReal(y_pos)
+            z_delta = adsk.core.ValueInput.createByReal(z_pos)
+            move_input.defineAsTranslateXYZ(x_delta, y_delta, z_delta, True)
+            moves.add(move_input)
 
-                copied_track_bodies.append(track_copy_body)
+            copied_track_bodies.append(track_copy_body)
+
+            is_next_cell_found = False
+            for next_row, next_col in [(row-1, col), (row+1, col), (row, col-1), (row, col+1)]:
+                if next_row >= 0 and next_row < len(matrix) and next_col >= 0 and next_col < len(matrix[0]):
+                    if matrix[next_row][next_col] == expected_next_cell_val:
+                        row = next_row
+                        col = next_col
+                        is_next_cell_found = True
+        final_z_pos = next_z_pos
+
+
+        # for row in range(len(matrix)):
+        #     y_pos = -1 * row * diameter
+        #     for col in range(len(matrix[0])):
+        #         x_pos = col * diameter
+        #         cell_val = matrix[row][col]
+        #         cell_type = type_matrix[row][col]
+        #         z_pos = next_z_pos
+        #         if cell_type in [0, 1, 2, 3]:
+        #             next_z_pos = z_pos - diameter*slope
+        #         else:
+        #             next_z_pos = z_pos - super_z_drop
+        #         # z_pos = -1 * (cell_val-1) * z_drop
+        #         cell_body = base_track_bodies[cell_type]
+        #         track_copy = copy_pastes.add(cell_body)
+        #         track_copy_body = track_copy.bodies.item(0)
+
+        #         object_collection = adsk.core.ObjectCollection.create()
+        #         object_collection.add(track_copy_body)
+        #         move_input = moves.createInput2(object_collection)
+        #         x_delta = adsk.core.ValueInput.createByReal(x_pos)
+        #         y_delta = adsk.core.ValueInput.createByReal(y_pos)
+        #         z_delta = adsk.core.ValueInput.createByReal(z_pos)
+        #         move_input.defineAsTranslateXYZ(x_delta, y_delta, z_delta, True)
+        #         moves.add(move_input)
+
+        #         copied_track_bodies.append(track_copy_body)
+        # final_z_pos = next_z_pos
                 
         # Combine all the track segments together
         target_body = copied_track_bodies[0]
@@ -686,10 +784,11 @@ class MarbleRunLogic():
         # extrude_distance_value_input = adsk.core.ValueInput.createByString(diameter_text)
         # extrude_distance_extent = adsk.fusion.DistanceExtentDefinition.create(extrude_distance_value_input)
         # straight_track_extrude = extrudes.add(extrude_input)
-        extrude_offset_text = f'-1 * ({num_x_cells_text} * {num_y_cells_text} * {diameter_text} * {slope_text} + {diameter_text} / 2 + 10 mm)'
+        # extrude_offset_text = f'-1 * ({final_z_pos} + {diameter_text} / 2 + 10 mm)'
+        extrude_offset_text = f'{final_z_pos} cm - ({diameter_text} / 2 + 10 mm)'
         start_offset = adsk.core.ValueInput.createByString(extrude_offset_text)
         extrude_input.startExtent = adsk.fusion.OffsetStartDefinition.create(start_offset)
-        extrude_distance = adsk.core.ValueInput.createByString(f'-1 * ({num_x_cells_text} * {num_y_cells_text} * {diameter_text} * {slope_text} + {diameter_text} / 2 + 10 mm)')
+        extrude_distance = adsk.core.ValueInput.createByString(f'-1 * ({num_x_cells_text} * {num_y_cells_text} * {super_z_drop} cm + {diameter_text} / 2 + 10 mm)')
         extrude_input.setOneSideExtent(
             adsk.fusion.DistanceExtentDefinition.create(extrude_distance),  # False = don't chain faces
             adsk.fusion.ExtentDirections.PositiveExtentDirection
@@ -727,6 +826,11 @@ class MarbleRunLogic():
         timeline_end_index = last_timeline_feature.timelineObject.index
         timeline_group = timeline_groups.add(timeline_start_index, timeline_end_index)
         timeline_group.name = 'Marble Run'
+
+
+
+
+
 
 
         # extent_distance_2 = adsk.fusion.DistanceExtentDefinition.create(mm10)
